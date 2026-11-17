@@ -16,8 +16,7 @@ class CheckInRequest extends FormRequest
     {
         return [
             'code' => ['required', 'string', 'max:64'],
-            // The gate the scanner is working: a ticket for another event is refused with a clear reason.
-            'event_id' => ['nullable', 'integer', 'min:1'],
+            'gate_name' => ['nullable', 'string', 'max:60'],
         ];
     }
 }

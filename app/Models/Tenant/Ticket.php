@@ -20,8 +20,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property TicketStatus $status
  * @property CarbonInterface|null $checked_in_at
  * @property int|null $checked_in_by
+ * @property string|null $gate_name
  * @property-read Order $order
  * @property-read TicketType $ticketType
+ * @property-read User|null $checkedInBy
  */
 class Ticket extends Model
 {
@@ -47,6 +49,12 @@ class Ticket extends Model
     public function ticketType(): BelongsTo
     {
         return $this->belongsTo(TicketType::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function checkedInBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'checked_in_by');
     }
 
     /** @return BelongsTo<Event, $this> */

@@ -5,7 +5,7 @@ namespace App\Enums;
 enum TicketStatus: string
 {
     case Valid = 'valid';
-    case Used = 'used';
+    case CheckedIn = 'checked_in';
     case Void = 'void';
 
     /** @return array<int, string> */
