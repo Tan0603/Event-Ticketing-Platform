@@ -37,8 +37,12 @@ final class TenantDatabase
             return;
         }
 
+        // Optionally clone an already migrated database (a few ms) instead of migrating from scratch (hundreds of ms).
+        $template = (string) config('ticketing.tenant_template_database');
+        $source = $template !== '' && self::existsNamed($template) ? self::guard($template) : 'template0';
+
         try {
-            self::central()->statement("CREATE DATABASE \"{$name}\" WITH TEMPLATE=template0");
+            self::central()->statement("CREATE DATABASE \"{$name}\" WITH TEMPLATE=\"{$source}\"");
             self::$created[] = $name;
         } catch (QueryException $e) {
             // 42P04 duplicate_database / 23505 unique_violation on pg_database: a concurrent run won the race.
@@ -73,7 +77,7 @@ final class TenantDatabase
             ->all();
     }
 
-    private static function existsNamed(string $name): bool
+    public static function existsNamed(string $name): bool
     {
         return self::central()->table('pg_database')->where('datname', $name)->exists();
     }
