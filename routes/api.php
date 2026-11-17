@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\EventController;
+use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
 use Illuminate\Support\Facades\Route;
@@ -22,7 +24,14 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-        // Admin routes (events, ticket types, orders, reports ...) are added per feature inside:
-        // Route::middleware('can:access-admin')->prefix('admin')->group(...)
+        Route::middleware('can:access-admin')->prefix('admin')->group(function () {
+            Route::apiResource('events', EventController::class);
+            Route::post('events/{event}/publish', [EventController::class, 'publish']);
+            Route::post('events/{event}/cancel', [EventController::class, 'cancel']);
+
+            Route::get('events/{event}/ticket-types', [TicketTypeController::class, 'index']);
+            Route::post('events/{event}/ticket-types', [TicketTypeController::class, 'store']);
+            Route::apiResource('ticket-types', TicketTypeController::class)->only(['show', 'update', 'destroy'])->parameters(['ticket-types' => 'ticketType']);
+        });
     });
 });

@@ -63,6 +63,21 @@ curl -X POST http://localhost:8088/api/auth/logout -H "X-Tenant-ID: sunsetfest" 
 Tokens are Sanctum personal access tokens stored in the tenant database and bound to their tenant by an
 explicit `tenant:{id}` ability. Roles: `admin` (everything) and `door_staff` (check-in only), enforced by Gates.
 
+## Events and ticket types (admin)
+
+All under `/api/admin`, admin role only, `X-Tenant-ID` + `Authorization: Bearer ...`.
+
+| method | path | what |
+|---|---|---|
+| GET / POST | `/events` | list (paginated; `status`, `q`, `from`, `to`, `sort`, `direction`, `per_page`) / create (draft) |
+| GET / PATCH / DELETE | `/events/{id}` | show with tiers / update / delete (blocked once anything sold or held) |
+| POST | `/events/{id}/publish` | needs at least one ticket type |
+| POST | `/events/{id}/cancel` | stops all sales |
+| GET / POST | `/events/{id}/ticket-types` | tiers of an event / add one |
+| GET / PATCH / DELETE | `/ticket-types/{id}` | show / update / delete (blocked once anything sold or held) |
+
+Prices are integer minor units (`5000` = RM 50.00). Times: any ISO-8601 value; one without an offset is read in the tenant timezone, and responses show the tenant timezone.
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
@@ -83,3 +98,7 @@ Ambiguities in the assignment are recorded here as they are resolved.
   to keep tests and the stress test fast. They are for local development only.
 - **Token lifetime is 12 hours** (`SANCTUM_EXPIRATION_MINUTES`). Logout revokes only the token that was used.
 - **Login is throttled** at 5/min per tenant + email + IP (`TICKETING_LOGIN_RATE_LIMIT`); the counter is tenant-scoped.
+- **Events with sales cannot be deleted** (any ticket sold or held): cancel them instead. Once orders exist this widens to "has any orders".
+- **The slug of a published event is frozen** because its public link would break. Drafts can change it.
+- **A tier's sales window must end by the event end;** with no end set it stops selling when the event ends.
+- **Quantity can shrink only down to sold + held** (checked atomically, backed by a CHECK constraint).

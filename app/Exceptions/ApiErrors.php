@@ -32,6 +32,7 @@ final class ApiErrors
                 'message' => $e->getMessage(),
                 'errors' => $e->errors(),
             ], $e->status),
+            $e instanceof BusinessRuleException => self::make($e->errorCode, $e->getMessage(), $e->status),
             $e instanceof AuthenticationException => self::make('unauthenticated', 'Authentication required.', 401),
             $e instanceof AuthorizationException => self::make('forbidden', 'This action is not allowed.', 403),
             $e instanceof ModelNotFoundException => self::make('not_found', 'Resource not found.', 404),
