@@ -184,3 +184,41 @@ One row per payment notification we accepted, kept as an audit trail.
 |---|---|
 | UNIQUE (event_id) | exactly-once: the row is inserted first, in the same transaction as the effect, so a retry or a simultaneous duplicate finds it and does nothing |
 | INDEX (order_id) | everything the provider told us about one order |
+
+### `tickets` (tenant database)
+
+One row per seat, created when an order becomes paid.
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| order_id, order_item_id, ticket_type_id, event_id | bigint FK | all `RESTRICT`; `event_id` is copied so check-in needs no join |
+| seq | int | 1..quantity within the order line |
+| code | varchar(32) | random, shown in the QR code |
+| status | varchar(16) | `valid` / `used` / `void` |
+| checked_in_at, checked_in_by | timestamptz, FK users null | set together with `status = used` |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (order_item_id, seq) | issuing twice (webhook retry, duplicate event) cannot create a second set |
+| UNIQUE (code) | a QR code identifies exactly one ticket |
+| INDEX (order_id) | tickets of an order (ticket page, e-mail) |
+| INDEX (event_id, status) | attendee lists and check-in counts per event |
+| INDEX (ticket_type_id) | tickets per tier (reports) |
+| CHECK status IN (...) | no invalid status |
+| CHECK (status = 'used') = (checked_in_at IS NOT NULL) | a used ticket always has a check-in time and vice versa |
+
+### `order_notifications` (tenant database)
+
+The claim that guarantees each e-mail is sent once per order and type.
+
+| column | type | notes |
+|---|---|---|
+| order_id | bigint FK | `CASCADE` |
+| type | varchar(30) | `confirmation`, `reminder`, `refund`, `event_cancelled` |
+| status | varchar(16) | `pending` / `sent` / `failed` |
+| attempts, sent_at, last_error | | delivery bookkeeping |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (order_id, type) | the claim: the first insert wins, every later attempt is a no-op |

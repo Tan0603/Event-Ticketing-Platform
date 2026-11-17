@@ -35,12 +35,10 @@ services:
   horizon:
     <<: *php
     command: php artisan horizon
-    profiles: ["full"]
 
   scheduler:
     <<: *php
     command: php artisan schedule:work
-    profiles: ["full"]
 
   postgres:
     image: postgres:16-bookworm

@@ -1,7 +1,9 @@
 <?php
 
+use App\Actions\Orders\QueueOrderEmail;
 use App\Actions\Orders\ReleaseOrder;
 use App\Actions\Payments\MarkOrderPaid;
+use App\Actions\Tickets\IssueTickets;
 use App\Enums\OrderStatus;
 use App\Models\Central\Tenant;
 use App\Models\Tenant\Event;
@@ -252,7 +254,7 @@ describe('failure safety', function () {
                     throw new RuntimeException('database went away');
                 }
             }
-            : new MarkOrderPaid);
+            : new MarkOrderPaid(app(IssueTickets::class), app(QueueOrderEmail::class)));
 
         sendWebhook('acme-events', $event)->assertStatus(500);
         expect(($this->orderStatus)($reference))->toBe(OrderStatus::Pending)
