@@ -4,6 +4,7 @@ namespace App\Actions\Events;
 
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tenant\Event;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
 
 class DeleteEvent
@@ -21,6 +22,7 @@ class DeleteEvent
 
             $locked->ticketTypes()->delete();
             $locked->delete();
+            StorefrontCache::flush();
         });
     }
 }

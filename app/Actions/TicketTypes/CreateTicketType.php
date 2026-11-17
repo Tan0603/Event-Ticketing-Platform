@@ -6,6 +6,7 @@ use App\Enums\EventStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tenant\Event;
 use App\Models\Tenant\TicketType;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
 
 class CreateTicketType
@@ -33,6 +34,9 @@ class CreateTicketType
             $ticketType = new TicketType($attributes);
             $ticketType->event()->associate($locked);
             $ticketType->save();
+
+            // Public shop cache: anything visitors see may have changed.
+            StorefrontCache::flush();
 
             return $ticketType;
         });
