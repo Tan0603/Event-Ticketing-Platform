@@ -6,6 +6,7 @@ use App\Actions\Tenancy\RegisterTenant;
 use App\Actions\Tenancy\RegisterTenantData;
 use App\Enums\UserRole;
 use App\Models\Central\Tenant;
+use App\Models\Tenant\Order;
 use App\Models\Tenant\User;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,14 @@ pest()->extend(TestCase::class)->use(DatabaseTruncation::class)->in('Feature');
  *
  * @return array<int, string>
  */
+/** The payment_reference of an order, which is what the payment provider quotes in its webhook. */
+function paymentRef(string $orderReference, string $tenantId = 'acme-events'): string
+{
+    return Tenant::query()->findOrFail($tenantId)->run(
+        fn () => (string) (Order::query()->where('reference', $orderReference)->value('payment_reference') ?? 'pay_unknown'),
+    );
+}
+
 function centralTables(): array
 {
     $connection = DB::connection(config('tenancy.database.central_connection'));

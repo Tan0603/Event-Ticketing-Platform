@@ -25,6 +25,7 @@ use LogicException;
  * @property OrderStatus $status
  * @property string $currency
  * @property int $subtotal_minor
+ * @property string $payment_reference
  * @property int $fee_minor
  * @property int $total_minor
  * @property int $fee_percent_bps

@@ -23,7 +23,7 @@ class SettingsController extends Controller
             'fee_fixed_minor' => $tenant->fee_fixed_minor,
             'payments' => [
                 // Give the provider this URL and secret: every call is signed (HMAC-SHA256 of the raw body, header X-Signature).
-                'webhook_url' => url("/api/webhooks/{$tenant->id}/payments"),
+                'webhook_url' => url("/api/webhooks/payments/{$tenant->id}"),
                 'webhook_secret' => $tenant->webhook_secret,
             ],
         ]]);

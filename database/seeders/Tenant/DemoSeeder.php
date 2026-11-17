@@ -135,7 +135,7 @@ class DemoSeeder extends Seeder
             $webhook->execute([
                 'id' => 'evt_demo_'.Str::lower(Str::random(12)),
                 'type' => $outcome <= 20 ? ProcessPaymentWebhook::FAILED : ProcessPaymentWebhook::SUCCEEDED,
-                'data' => ['order_reference' => $order->reference, 'amount_minor' => $order->total_minor, 'currency' => $order->currency],
+                'payment_reference' => $order->payment_reference, 'amount' => $order->total_minor, 'currency' => $order->currency,
             ]);
         }
 

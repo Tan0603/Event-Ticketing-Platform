@@ -19,8 +19,10 @@ final class OrderStateMachine
     private const ALLOWED = [
         'pending' => [OrderStatus::Paid, OrderStatus::Failed, OrderStatus::Expired],
         // A payment that arrives after the expiry job ran may still be honoured if stock is left.
-        'expired' => [OrderStatus::Paid],
+        // A late payment: honoured if stock is left, otherwise the money is taken but nothing can be issued.
+        'expired' => [OrderStatus::Paid, OrderStatus::RefundPending],
         'paid' => [OrderStatus::Refunded],
+        'refund_pending' => [OrderStatus::Refunded],
         'failed' => [],
         'refunded' => [],
     ];
@@ -30,6 +32,7 @@ final class OrderStateMachine
         'paid' => 'paid_at',
         'failed' => 'failed_at',
         'expired' => 'expired_at',
+        'refund_pending' => 'refund_pending_at',
         'refunded' => 'refunded_at',
     ];
 

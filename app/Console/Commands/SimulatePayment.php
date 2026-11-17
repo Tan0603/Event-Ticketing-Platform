@@ -51,19 +51,18 @@ class SimulatePayment extends Command
         $payload = [
             'id' => $this->option('event-id') ?: 'evt_sim_'.Str::lower(Str::random(16)),
             'type' => $outcome === 'succeeded' ? ProcessPaymentWebhook::SUCCEEDED : ProcessPaymentWebhook::FAILED,
-            'data' => [
-                'order_reference' => $order->reference,
-                'amount_minor' => $this->option('amount') !== null ? (int) $this->option('amount') : $order->total_minor,
-                'currency' => $order->currency,
-            ],
+            'payment_reference' => $order->payment_reference,
+            'amount' => $this->option('amount') !== null ? (int) $this->option('amount') : $order->total_minor,
+            'currency' => $order->currency,
+            'occurred_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
         ];
 
         $body = json_encode($payload, JSON_THROW_ON_ERROR);
         $signature = hash_hmac('sha256', $body, (string) $tenant->webhook_secret);
-        $url = rtrim((string) $this->option('url'), '/')."/api/webhooks/{$tenant->id}/payments";
+        $url = rtrim((string) $this->option('url'), '/')."/api/webhooks/payments/{$tenant->id}";
 
         $this->line("POST {$url}");
-        $this->line("event {$payload['id']} · {$payload['type']} · {$order->reference} · {$payload['data']['amount_minor']} {$order->currency}");
+        $this->line("event {$payload['id']} · {$payload['type']} · {$order->reference} · {$payload['amount']} {$order->currency}");
 
         $response = Http::withBody($body, 'application/json')->withHeaders(['X-Signature' => $signature, 'Accept' => 'application/json'])->post($url);
 

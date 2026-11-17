@@ -36,7 +36,7 @@ Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event
 | sign-up | `POST /register`, `GET /register/{id}` | public (central) |
 | auth | `POST /auth/login`, `POST /auth/logout` | staff |
 | shop | `GET /events`, `GET /events/{slug}`, `POST /events/{slug}/checkout`, `GET /orders/{reference}` | public |
-| payments | `POST /webhooks/{tenant}/payments` (HMAC signed) | payment provider |
+| payments | `POST /webhooks/payments/{tenant}` (HMAC signed) | payment provider |
 | e-mail links | `GET /public/{tenant}/orders/{reference}/tickets`, `GET /public/{tenant}/tickets/{code}/qr` (signed URLs) | buyers |
 | door | `POST /check-in` | door staff, admin |
 | admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/events/{id}/report` | admin |

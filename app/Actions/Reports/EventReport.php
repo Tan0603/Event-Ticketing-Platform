@@ -91,7 +91,7 @@ class EventReport
                 'awaiting_check_in' => $sum('awaiting_check_in'),
                 'void' => $sum('void'),
             ],
-            'orders_by_status' => ['pending' => (int) ($orders['pending'] ?? 0), 'paid' => (int) ($orders['paid'] ?? 0), 'failed' => (int) ($orders['failed'] ?? 0), 'expired' => (int) ($orders['expired'] ?? 0), 'refunded' => (int) ($orders['refunded'] ?? 0)],
+            'orders_by_status' => ['pending' => (int) ($orders['pending'] ?? 0), 'paid' => (int) ($orders['paid'] ?? 0), 'failed' => (int) ($orders['failed'] ?? 0), 'expired' => (int) ($orders['expired'] ?? 0), 'refund_pending' => (int) ($orders['refund_pending'] ?? 0), 'refunded' => (int) ($orders['refunded'] ?? 0)],
         ];
     }
 }

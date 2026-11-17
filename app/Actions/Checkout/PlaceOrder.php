@@ -71,6 +71,7 @@ class PlaceOrder
 
         $order = OrderStateMachine::begin([
             'reference' => 'ORD-'.Str::upper(Str::random(12)),
+            'payment_reference' => 'pay_'.Str::lower(Str::random(12)),
             'event_id' => $event->id,
             'buyer_name' => $data->buyerName,
             'buyer_email' => strtolower($data->buyerEmail),

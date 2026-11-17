@@ -15,6 +15,8 @@
     { "key": "ticket_type_id", "value": "1" },
     { "key": "slug", "value": "summer-music-fest" },
     { "key": "reference", "value": "" },
+    { "key": "payment_reference", "value": "" },
+    { "key": "total_minor", "value": "0" },
     { "key": "ticket_code", "value": "" }
   ],
   "item": [
@@ -62,7 +64,7 @@
         { "name": "Show event", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/events/{{slug}}" } },
         {
           "name": "Checkout",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const json = pm.response.json();", "if (json.data && json.data.reference) { pm.collectionVariables.set('reference', json.data.reference); }"] } }],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const json = pm.response.json();", "if (json.data && json.data.reference) { pm.collectionVariables.set('reference', json.data.reference); pm.collectionVariables.set('payment_reference', json.data.payment_reference); pm.collectionVariables.set('total_minor', json.data.total_minor); }"] } }],
           "request": {
             "method": "POST",
             "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
@@ -82,8 +84,8 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
-            "url": "{{base_url}}/webhooks/{{tenant}}/payments",
-            "body": { "mode": "raw", "raw": "{\"id\":\"evt_postman_1\",\"type\":\"payment.succeeded\",\"data\":{\"order_reference\":\"{{reference}}\",\"amount_minor\":10550,\"currency\":\"MYR\"}}" }
+            "url": "{{base_url}}/webhooks/payments/{{tenant}}",
+            "body": { "mode": "raw", "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}" }
           }
         }
       ]

@@ -24,8 +24,8 @@ use Illuminate\Support\Testing\Fakes\MailFake;
 
 function pay(string $tenantId, string $reference, int $total, string $eventId): void
 {
-    $body = json_encode(['id' => $eventId, 'type' => 'payment.succeeded', 'data' => ['order_reference' => $reference, 'amount_minor' => $total, 'currency' => 'MYR']]);
-    test()->call('POST', "/api/webhooks/{$tenantId}/payments", [], [], [], [
+    $body = json_encode(['id' => $eventId, 'type' => 'payment.succeeded', 'payment_reference' => paymentRef($reference, $tenantId), 'amount' => $total, 'currency' => 'MYR']);
+    test()->call('POST', "/api/webhooks/payments/{$tenantId}", [], [], [], [
         'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
         'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find($tenantId)->webhook_secret),
     ], $body)->assertOk();
@@ -161,8 +161,8 @@ describe('confirmation e-mail', function () {
     it('is not sent for a payment that failed', function () {
         Mail::fake();
         [$reference] = ($this->buy)();
-        $body = json_encode(['id' => 'evt_f', 'type' => 'payment.failed', 'data' => ['order_reference' => $reference]]);
-        $this->call('POST', '/api/webhooks/acme-events/payments', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret)], $body)->assertOk();
+        $body = json_encode(['id' => 'evt_f', 'type' => 'payment.failed', 'payment_reference' => paymentRef($reference)]);
+        $this->call('POST', '/api/webhooks/payments/acme-events', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret)], $body)->assertOk();
 
         Mail::assertNothingSent();
     });

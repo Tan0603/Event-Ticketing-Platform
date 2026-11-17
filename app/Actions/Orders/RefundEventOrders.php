@@ -25,7 +25,7 @@ class RefundEventOrders
 
         $queued = 0;
 
-        Order::query()->where('event_id', $event->id)->where('status', OrderStatus::Paid)
+        Order::query()->where('event_id', $event->id)->whereIn('status', [OrderStatus::Paid, OrderStatus::RefundPending])
             ->select('id')->chunkById(200, function ($orders) use ($refundedBy, &$queued): void {
                 foreach ($orders as $order) {
                     RefundOrderJob::dispatch((string) tenant('id'), $order->id, $refundedBy, 'Event cancelled');

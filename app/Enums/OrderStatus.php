@@ -8,6 +8,7 @@ enum OrderStatus: string
     case Paid = 'paid';
     case Failed = 'failed';
     case Expired = 'expired';
+    case RefundPending = 'refund_pending';
     case Refunded = 'refunded';
 
     /** @return array<int, string> */

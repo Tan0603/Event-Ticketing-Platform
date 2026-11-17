@@ -16,6 +16,7 @@ class OrderResource extends JsonResource
     {
         return [
             'reference' => $this->reference,
+            'payment_reference' => $this->payment_reference,
             'status' => $this->status->value,
             'event' => [
                 'title' => $this->event->title,
