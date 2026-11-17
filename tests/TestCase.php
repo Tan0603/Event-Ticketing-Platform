@@ -13,6 +13,9 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // Expected failures (a test that provokes a 500) must not spray stack traces over the test output.
+        config(['logging.default' => 'null']);
+
         // Once per run: a crashed earlier run must not poison this one. Only the test prefix is swept,
         // so real tenant databases (tenant_*) are never touched.
         if (! self::$sweptLeftoverDatabases) {
