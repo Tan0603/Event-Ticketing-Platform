@@ -27,6 +27,22 @@ Redis is only reachable inside the Docker network.
 curl http://localhost:8088/api/events -H "X-Tenant-ID: sunsetfest"
 ```
 
+## API at a glance
+
+Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event-ticketing.postman_collection.json) for ready-made requests. Every tenant request sends `X-Tenant-ID`; staff requests also send `Authorization: Bearer <token>`. Errors are JSON `{"error": "stable_code", "message": "..."}`.
+
+| area | endpoints | who |
+|---|---|---|
+| sign-up | `POST /register`, `GET /register/{id}` | public (central) |
+| auth | `POST /auth/login`, `POST /auth/logout` | staff |
+| shop | `GET /events`, `GET /events/{slug}`, `POST /events/{slug}/checkout`, `GET /orders/{reference}` | public |
+| payments | `POST /webhooks/{tenant}/payments` (HMAC signed) | payment provider |
+| e-mail links | `GET /public/{tenant}/orders/{reference}/tickets`, `GET /public/{tenant}/tickets/{code}/qr` (signed URLs) | buyers |
+| door | `POST /check-in` | door staff, admin |
+| admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/events/{id}/report` | admin |
+
+`GET /api/admin/settings` shows the tenant's webhook URL and secret (the secret is also printed once at `tenant:provision`).
+
 ## Tests and quality gates
 
 ```bash

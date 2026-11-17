@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
@@ -65,6 +66,7 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
             Route::post('events/{event}/cancel', [EventController::class, 'cancel']);
             Route::post('events/{event}/refund-orders', [EventController::class, 'refundOrders']);
 
+            Route::get('settings', [SettingsController::class, 'show']);
             Route::get('dashboard', [ReportController::class, 'dashboard']);
             Route::get('reports/sales', [ReportController::class, 'sales']);
             Route::get('events/{event}/report', [ReportController::class, 'event']);
