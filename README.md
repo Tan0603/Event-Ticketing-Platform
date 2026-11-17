@@ -157,6 +157,23 @@ docker compose exec app php artisan payments:simulate {tenant} {order_reference}
 
 After pulling new code: `php artisan migrate` (central) and `php artisan tenants:migrate` (every tenant database).
 
+## Tickets and e-mail
+
+When an order becomes paid (webhook, late payment or a free order) the same transaction issues one ticket
+per seat (`tickets`, unique `(order_item_id, seq)`, random `code`) and claims the confirmation e-mail
+(`order_notifications`, unique `(order_id, type)`). The job is dispatched `afterCommit` on the `mail` queue,
+so nothing is sent for a rolled-back payment, and a duplicate webhook cannot send a second mail.
+
+The e-mail holds the order summary, one inline QR code per ticket and a signed link:
+
+- `GET /api/public/{tenant}/orders/{reference}/tickets`: tickets of a paid or refunded order, no login.
+- `GET /api/public/{tenant}/tickets/{code}/qr`: PNG of one QR code.
+
+Both links are signed and expire after `ticketing.ticket_link_days` (30). The tenant is in the signed path,
+so a link cannot be replayed against another tenant. Mails are delivered by Horizon (`docker compose up -d`
+starts it); open Mailpit at http://localhost:8026 to read them. A failed send is retried (10 s, 1 m, 5 m, 15 m),
+then recorded as `failed` on the notification row.
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,

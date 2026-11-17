@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
 use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
+use App\Http\Controllers\Storefront\TicketController;
 use App\Http\Controllers\Webhook\PaymentWebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,6 +28,15 @@ Route::get('/register/{tenantId}', [RegisterController::class, 'show'])
  */
 Route::post('/webhooks/{tenant}/payments', [PaymentWebhookController::class, 'handle'])
     ->middleware(['tenant.path', 'tenant.active', 'throttle:webhook', 'webhook.signature']);
+
+/*
+ * Links inside the buyer's e-mail: signed (tamper-proof, expiring) and addressed by tenant path, because a
+ * link in an inbox cannot carry the X-Tenant-ID header.
+ */
+Route::middleware(['tenant.path', 'tenant.active', 'throttle:storefront', 'signed'])->prefix('public/{tenant}')->group(function () {
+    Route::get('/orders/{reference}/tickets', [TicketController::class, 'show'])->name('public.tickets.show');
+    Route::get('/tickets/{code}/qr', [TicketController::class, 'qr'])->name('public.tickets.qr');
+});
 
 Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
