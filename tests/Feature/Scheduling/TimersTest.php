@@ -166,7 +166,7 @@ describe('fan-out to tenants', function () {
 
         expect($events)->toHaveKeys(['expire-pending-orders', 'queue-event-reminders'])
             ->and($events['expire-pending-orders']->expression)->toBe('* * * * *')
-            ->and($events['queue-event-reminders']->expression)->toBe('*/15 * * * *')
+            ->and($events['queue-event-reminders']->expression)->toBe('0 * * * *') // hourly (spec section 15)
             ->and($events['expire-pending-orders']->withoutOverlapping)->toBeTrue()
             ->and($events['queue-event-reminders']->withoutOverlapping)->toBeTrue();
     });

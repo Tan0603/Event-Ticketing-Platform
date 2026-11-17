@@ -20,7 +20,19 @@ class SalesReportRequest extends FormRequest
         return [
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.config('ticketing.reports.max_per_page')],
         ];
+    }
+
+    public function page(): int
+    {
+        return (int) $this->input('page', 1);
+    }
+
+    public function perPage(): int
+    {
+        return (int) $this->input('per_page', config('ticketing.reports.default_per_page'));
     }
 
     /** @return array<int, callable(Validator): void> */

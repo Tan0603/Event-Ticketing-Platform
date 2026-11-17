@@ -39,7 +39,7 @@ Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event
 | payments | `POST /webhooks/payments/{tenant}` (HMAC signed) | payment provider |
 | e-mail links | `GET /public/{tenant}/orders/{reference}/tickets`, `GET /public/{tenant}/tickets/{code}/qr` (signed URLs) | buyers |
 | door | `POST /check-in` | door staff, admin |
-| admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/events/{id}/report` | admin |
+| admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/reports/events/{id}`, `/admin/events/{id}/attendees` | admin |
 
 `GET /api/admin/settings` shows the tenant's webhook URL and secret (the secret is also printed once at `tenant:provision`).
 
@@ -235,9 +235,10 @@ All figures are SQL aggregates (`GROUP BY` / `SUM` / `COUNT ... FILTER`), intege
 `ticketing.cache.dashboard_ttl` (60 s) and dropped when an order is paid, refunded or expired. Pending orders and
 holds can lag by up to the TTL.
 
-- `GET /api/admin/dashboard`: orders by status, gross / fees / refunds / net, tickets sold / held / capacity / checked in, upcoming events, top 5 events by net revenue.
-- `GET /api/admin/reports/sales?from=YYYY-MM-DD&to=YYYY-MM-DD`: one row per day in the tenant timezone (default: last 30 days, at most 366). **A refunded order counts as a sale on the day it was paid and as a refund on the day it was refunded** (your decision 6), so a day can have negative net.
-- `GET /api/admin/events/{event}/report`: per ticket type capacity, sold, held, gross, refunded, net, checked in, awaiting, void, plus totals.
+- `GET /api/admin/dashboard`: gross sales **today** and **this month** (tenant timezone; orders paid in the window, plus the refunds made in it) and all-time, tickets **sold vs capacity per upcoming event** (next 10), **active holds** (pending orders whose hold has not expired, and their tickets), the **check-in rate today** (events running today, integer basis points), orders by status and the top 5 events.
+- `GET /api/admin/reports/sales?from=YYYY-MM-DD&to=YYYY-MM-DD&page=&per_page=`: one row per day in the tenant timezone with orders, **tickets sold**, ticket revenue (prices only), gross (incl. fees), fees, refunds and net (default: last 30 days, at most 366; the day list is paginated, `totals` cover the whole range). **A refunded order counts as a sale on the day it was paid and as a refund on the day it was refunded** (your decision 6), so a day can have negative net.
+- `GET /api/admin/reports/events/{event}` (alias `/admin/events/{event}/report`): per ticket type capacity, sold, held, remaining, revenue, refunded, checked in, awaiting, void, plus totals; paginated by ticket type.
+- `GET /api/admin/events/{event}/attendees`: see Check-in.
 
 ## Demo data
 
@@ -257,7 +258,7 @@ cannot block the others. The per-tenant jobs are idempotent and run on the Horiz
 | task | every | what it does |
 |---|---|---|
 | `expire-pending-orders` | minute | Pending orders past `expires_at` become `expired` and their held tickets go back to stock (`ReleaseOrder`, one short transaction per order, lock order event -> order -> ticket types). Orders paid in the meantime are skipped after re-checking under the lock. |
-| `queue-event-reminders` | 15 minutes | Paid orders of published events starting within `ticketing.reminder_hours_before` (24 h) get one reminder e-mail. The `order_notifications` UNIQUE `(order_id, type)` claim makes repeated runs harmless. |
+| `queue-event-reminders` | hourly | Paid orders of published events starting within `ticketing.reminder_hours_before` (24 h) get one reminder e-mail. The `order_notifications` UNIQUE `(order_id, type)` claim makes repeated runs harmless. |
 
 After a deploy run `php artisan horizon:terminate` so the workers pick up new code.
 

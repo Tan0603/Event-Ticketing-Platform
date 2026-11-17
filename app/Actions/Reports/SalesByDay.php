@@ -36,14 +36,18 @@ class SalesByDay
 
         $rows = DB::select(
             'SELECT day,
-                    SUM(orders_paid) AS orders_paid, SUM(gross_minor) AS gross_minor, SUM(fees_minor) AS fees_minor,
+                    SUM(orders_paid) AS orders_paid, SUM(tickets_sold) AS tickets_sold, SUM(revenue_minor) AS revenue_minor,
+                    SUM(gross_minor) AS gross_minor, SUM(fees_minor) AS fees_minor,
                     SUM(refunds) AS refunds, SUM(refunded_minor) AS refunded_minor
                FROM (
-                    SELECT (paid_at AT TIME ZONE ?)::date AS day, 1 AS orders_paid, total_minor AS gross_minor, fee_minor AS fees_minor,
+                    SELECT (o.paid_at AT TIME ZONE ?)::date AS day, 1 AS orders_paid, COALESCE(q.qty, 0) AS tickets_sold,
+                           o.subtotal_minor AS revenue_minor, o.total_minor AS gross_minor, o.fee_minor AS fees_minor,
                            0 AS refunds, 0 AS refunded_minor
-                      FROM orders WHERE paid_at >= ? AND paid_at < ?
+                      FROM orders o
+                      LEFT JOIN LATERAL (SELECT SUM(quantity) AS qty FROM order_items WHERE order_id = o.id) q ON true
+                     WHERE o.paid_at >= ? AND o.paid_at < ?
                     UNION ALL
-                    SELECT (created_at AT TIME ZONE ?)::date, 0, 0, 0, 1, amount_minor
+                    SELECT (created_at AT TIME ZONE ?)::date, 0, 0, 0, 0, 0, 1, amount_minor
                       FROM refunds WHERE created_at >= ? AND created_at < ?
                ) activity
               GROUP BY day ORDER BY day',
@@ -52,13 +56,15 @@ class SalesByDay
         $byDay = collect($rows)->keyBy('day');
 
         $days = [];
-        $totals = ['orders_paid' => 0, 'gross_minor' => 0, 'fees_minor' => 0, 'refunds' => 0, 'refunded_minor' => 0, 'net_minor' => 0];
+        $totals = ['orders_paid' => 0, 'tickets_sold' => 0, 'revenue_minor' => 0, 'gross_minor' => 0, 'fees_minor' => 0, 'refunds' => 0, 'refunded_minor' => 0, 'net_minor' => 0];
 
         for ($day = $start; $day < $end; $day = $day->addDay()) {
             $row = $byDay->get($day->toDateString());
             $entry = [
                 'date' => $day->toDateString(),
                 'orders_paid' => (int) ($row->orders_paid ?? 0),
+                'tickets_sold' => (int) ($row->tickets_sold ?? 0),
+                'revenue_minor' => (int) ($row->revenue_minor ?? 0),   // ticket revenue: prices only, no fees
                 'gross_minor' => (int) ($row->gross_minor ?? 0),
                 'fees_minor' => (int) ($row->fees_minor ?? 0),
                 'refunds' => (int) ($row->refunds ?? 0),

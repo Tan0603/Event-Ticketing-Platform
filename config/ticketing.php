@@ -57,6 +57,9 @@ return [
     'reports' => [
         'default_days' => 30,   // the sales report covers this many days when no range is given
         'max_days' => 366,      // longest range one request may ask for
+        'default_per_page' => 31, // days (or ticket types) per page
+        'max_per_page' => 100,
+        'dashboard_upcoming_events' => 10, // upcoming events listed on the dashboard
     ],
 
     'pagination' => [
