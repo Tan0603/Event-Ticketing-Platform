@@ -30,6 +30,7 @@ return [
     'rate_limits' => [
         'register_per_minute' => (int) env('TICKETING_REGISTER_RATE_LIMIT', 5),
         'register_per_day' => (int) env('TICKETING_REGISTER_DAILY_LIMIT', 20),
+        'register_status_per_minute' => (int) env('TICKETING_REGISTER_STATUS_LIMIT', 60),
         'checkout_per_minute_email' => (int) env('TICKETING_CHECKOUT_EMAIL_LIMIT', 10),
         // High per IP so the 200-request stress test reaches the inventory locking path.
         'checkout_per_minute_ip' => (int) env('TICKETING_CHECKOUT_IP_LIMIT', 300),
