@@ -2,6 +2,7 @@
 
 namespace App\Actions\Checkout;
 
+use App\Actions\Payments\MarkOrderPaid;
 use App\Domain\Inventory\TicketStock;
 use App\Domain\Money\FeeCalculator;
 use App\Domain\Orders\OrderStateMachine;
@@ -20,6 +21,8 @@ use Illuminate\Validation\ValidationException;
 
 class PlaceOrder
 {
+    public function __construct(private readonly MarkOrderPaid $markPaid) {}
+
     /**
      * Reserve the tickets and create a pending order, atomically: either every line is held or nothing is.
      *
@@ -115,6 +118,11 @@ class PlaceOrder
         ])->save();
 
         $order->load('items')->setRelation('event', $event);
+
+        // Nothing to pay: confirm straight away, through the same code as a real payment.
+        if ($totals->totalMinor === 0) {
+            $this->markPaid->execute($order);
+        }
 
         return $order;
     }
