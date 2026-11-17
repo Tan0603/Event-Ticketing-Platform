@@ -41,3 +41,20 @@ Permanent queue failures (Redis is the queue driver). `uuid` is UNIQUE so a fail
 ## Tenant databases (`tenant_{id}`)
 
 Added feature by feature (users, events, ticket types, orders, tickets, ...).
+
+### `users` (tenant database)
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| name | varchar | |
+| email | varchar | stored lowercase |
+| password | varchar | bcrypt hash; never plaintext |
+| role | varchar(20) | `admin` / `door_staff` |
+| created_at, updated_at | timestamptz | |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (email) | login lookup, and a retried provisioning can never create a second admin |
+| CHECK role IN ('admin','door_staff') | a role outside the enum can never be stored |
+| CHECK email = lower(email) | case-variants of one address cannot become two accounts |

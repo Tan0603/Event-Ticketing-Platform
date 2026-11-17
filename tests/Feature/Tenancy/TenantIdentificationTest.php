@@ -118,7 +118,7 @@ describe('tenant model', function () {
     it('maps hyphenated ids to collision-free database names', function () {
         $tenant = Tenant::factory()->make(['id' => 'sunset-fest']);
 
-        expect($tenant->database()->getName())->toBe('tenant_sunset_fest');
+        expect($tenant->database()->getName())->toBe(config('tenancy.database.prefix').'sunset_fest');
     });
 
     it('stores fees as integer minor units and encrypts the webhook secret', function () {
