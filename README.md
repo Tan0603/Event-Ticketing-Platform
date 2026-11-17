@@ -192,6 +192,18 @@ working). The decision is one statement, `UPDATE tickets SET status='used' ... W
 Codes are trimmed and upper-cased, so a hand-typed code works. Throttled per staff member
 (`ticketing.rate_limits.checkin_per_minute`, 120).
 
+## Orders and refunds (admin)
+
+- `GET /api/admin/orders` (paginated, newest first): filters `event_id`, `status`, `email`, `reference`, `per_page`.
+- `GET /api/admin/orders/{reference}`: items, tickets and the refund.
+- `POST /api/admin/orders/{reference}/refund` `{"reason": "..."}`: full refund of a paid order.
+- `POST /api/admin/events/{event}/refund-orders`: refunds every paid order of a **cancelled** event, one queued job per order (202).
+
+A refund is one transaction (lock order event -> order -> ticket types -> tickets): the sold counters go back to
+stock, every ticket becomes `void`, the order moves to `refunded` through the state machine, a `refunds` row is
+written (UNIQUE `order_id`) and the buyer gets an e-mail. If any ticket was already scanned at the door the whole
+refund is refused (`tickets_already_used`) and nothing changes. Not paid: `invalid_order_state`.
+
 ## Scheduled tasks
 
 The `scheduler` container runs `schedule:work`. Each task only dispatches **one job per active tenant**
@@ -242,3 +254,13 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **An amount mismatch is answered 422 and never marks the order paid.** The event id is recorded, so the provider must send a corrected notification under a new id.
 - **An unknown order reference is answered 200** (`unknown_order`) so the provider does not retry forever.
 - **A free order (total 0) is paid immediately at checkout.**
+- **Refunds are full and recorded, not paid out.** There is no payment-provider API in this assignment, so a refund
+  records the amount (`refunds.amount_minor` = the order total, fee included) and returns the tickets; moving the
+  money is out of scope. Partial refunds are not supported.
+- **An order with a scanned ticket cannot be refunded** (`tickets_already_used`): the buyer already used part of it.
+- **Cancelling an event does not refund by itself.** It stops sales at once; an admin then calls
+  `POST /api/admin/events/{event}/refund-orders` to queue the refunds.
+- **Check-in has no time window.** A valid ticket of a published event is accepted at any time; the scanner can pass
+  `event_id` to refuse tickets of another event.
+- **Reminders are sent once per order**, 24 hours before the event (`ticketing.reminder_hours_before`), to paid orders only.
+- **Payment after `expires_at` but before the expiry task ran counts as a normal payment** (your decision 4): the expiry task re-checks the status under the lock.

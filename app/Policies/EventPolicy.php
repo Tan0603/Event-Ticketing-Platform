@@ -44,6 +44,11 @@ class EventPolicy
         return $this->isAdmin($user);
     }
 
+    public function refundOrders(User $user, Event $event): bool
+    {
+        return $this->isAdmin($user);
+    }
+
     private function isAdmin(User $user): bool
     {
         return $user->role === UserRole::Admin;
