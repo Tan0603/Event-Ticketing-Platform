@@ -24,7 +24,8 @@ class OrderTicketsResource extends JsonResource
             'buyer_name' => $this->buyer_name,
             'event' => [
                 'title' => $this->event->title,
-                'venue' => $this->event->venue,
+                'venue_name' => $this->event->venue_name,
+                'venue_address' => $this->event->venue_address,
                 'starts_at' => TenantTime::iso($this->event->starts_at),
                 'ends_at' => TenantTime::iso($this->event->ends_at),
             ],

@@ -15,7 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $title
  * @property string $slug
  * @property string|null $description
- * @property string $venue
+ * @property string $venue_name
+ * @property string|null $venue_address
  * @property CarbonInterface $starts_at
  * @property CarbonInterface $ends_at
  * @property EventStatus $status
@@ -27,7 +28,7 @@ class Event extends Model
     /** @use HasFactory<EventFactory> */
     use HasFactory;
 
-    protected $fillable = ['title', 'slug', 'description', 'venue', 'starts_at', 'ends_at'];
+    protected $fillable = ['title', 'slug', 'description', 'venue_name', 'venue_address', 'starts_at', 'ends_at'];
 
     /** @return array<string, string> */
     protected function casts(): array

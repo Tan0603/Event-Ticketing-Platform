@@ -11,7 +11,8 @@ function eventPayload(array $overrides = []): array
 {
     return array_merge([
         'title' => 'Sunset Festival',
-        'venue' => 'Main Hall',
+        'venue_name' => 'Main Hall',
+        'venue_address' => '1 Jalan Hall, Kuala Lumpur',
         'description' => 'Live music.',
         'starts_at' => '2027-03-01T19:00:00+08:00',
         'ends_at' => '2027-03-01T23:00:00+08:00',
@@ -65,7 +66,7 @@ describe('creating events', function () {
         'end before start' => [['ends_at' => '2027-03-01T18:00:00+08:00'], 'ends_at'],
         'end equals start' => [['ends_at' => '2027-03-01T19:00:00+08:00'], 'ends_at'],
         'missing title' => [['title' => ''], 'title'],
-        'missing venue' => [['venue' => ''], 'venue'],
+        'missing venue' => [['venue_name' => ''], 'venue_name'],
         'bad slug' => [['slug' => 'Not A Slug!'], 'slug'],
         'not a date' => [['starts_at' => 'tomorrow-ish'], 'starts_at'],
     ]);
@@ -75,9 +76,9 @@ describe('updating events', function () {
     it('updates only the fields sent', function () {
         $id = $this->postJson('/api/admin/events', eventPayload(), $this->h)->json('data.id');
 
-        $this->patchJson("/api/admin/events/{$id}", ['venue' => 'Arena'], $this->h)
+        $this->patchJson("/api/admin/events/{$id}", ['venue_name' => 'Arena', 'venue_address' => 'Bukit Jalil'], $this->h)
             ->assertOk()
-            ->assertJsonPath('data.venue', 'Arena')
+            ->assertJsonPath('data.venue_name', 'Arena')->assertJsonPath('data.venue_address', 'Bukit Jalil')
             ->assertJsonPath('data.title', 'Sunset Festival');
     });
 
@@ -100,7 +101,7 @@ describe('updating events', function () {
     it('cannot edit a cancelled event', function () {
         $event = $this->tenant->run(fn () => Event::factory()->cancelled()->create());
 
-        $this->patchJson("/api/admin/events/{$event->id}", ['venue' => 'x'], $this->h)
+        $this->patchJson("/api/admin/events/{$event->id}", ['venue_name' => 'x'], $this->h)
             ->assertStatus(409)->assertJsonPath('error', 'event_cancelled');
     });
 

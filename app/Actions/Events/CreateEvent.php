@@ -16,7 +16,8 @@ class CreateEvent
             'title' => $data->title,
             'slug' => $data->slug ?? $this->uniqueSlug($data->title),
             'description' => $data->description,
-            'venue' => $data->venue,
+            'venue_name' => $data->venueName,
+            'venue_address' => $data->venueAddress,
             'starts_at' => $data->startsAt,
             'ends_at' => $data->endsAt,
         ]);

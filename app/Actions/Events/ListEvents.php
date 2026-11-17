@@ -28,7 +28,7 @@ class ListEvents
             ->when($filters['q'] ?? null, function ($q, string $term) {
                 $like = '%'.addcslashes($term, '\\%_').'%';
 
-                return $q->where(fn ($w) => $w->where('title', 'ilike', $like)->orWhere('venue', 'ilike', $like));
+                return $q->where(fn ($w) => $w->where('title', 'ilike', $like)->orWhere('venue_name', 'ilike', $like));
             })
             ->when($filters['from'] ?? null, fn ($q, $from) => $q->where('starts_at', '>=', TenantTime::parse($from)))
             ->when($filters['to'] ?? null, fn ($q, $to) => $q->where('starts_at', '<=', TenantTime::parse($to)))

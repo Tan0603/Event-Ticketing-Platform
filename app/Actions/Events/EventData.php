@@ -10,8 +10,9 @@ final readonly class EventData
         public string $title,
         public ?string $slug,
         public ?string $description,
-        public string $venue,
+        public string $venueName,
         public CarbonImmutable $startsAt,
         public CarbonImmutable $endsAt,
+        public ?string $venueAddress = null,
     ) {}
 }

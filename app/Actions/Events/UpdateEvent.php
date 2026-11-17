@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 class UpdateEvent
 {
     /**
-     * @param  array<string, mixed>  $attributes  only the keys the client sent (title, slug, description, venue, starts_at, ends_at)
+     * @param  array<string, mixed>  $attributes  only the keys the client sent (title, slug, description, venue_name, venue_address, starts_at, ends_at)
      */
     public function execute(Event $event, array $attributes): Event
     {

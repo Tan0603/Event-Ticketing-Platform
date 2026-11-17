@@ -83,13 +83,13 @@ class DemoSeeder extends Seeder
         $tier = app(CreateTicketType::class);
         $day = fn (int $days, int $hour = 19): CarbonImmutable => CarbonImmutable::now()->addDays($days)->setTime($hour, 0);
 
-        $fest = $create->execute(new EventData('Summer Music Fest', self::SLUG, 'Three stages, thirty bands.', 'Bukit Jalil Arena', $day(30), $day(30, 23)));
+        $fest = $create->execute(new EventData('Summer Music Fest', self::SLUG, 'Three stages, thirty bands.', 'Bukit Jalil Arena', $day(30), $day(30, 23), 'Jalan Hang Jebat, Bukit Jalil, 57000 Kuala Lumpur'));
         $tier->execute($fest, ['name' => 'Early Bird', 'price_minor' => 4500, 'quantity' => 100, 'max_per_order' => 6]);
         $tier->execute($fest, ['name' => 'General', 'price_minor' => 6500, 'quantity' => 300, 'max_per_order' => 8]);
         $tier->execute($fest, ['name' => 'VIP', 'price_minor' => 15000, 'quantity' => 40, 'max_per_order' => 4]);
         $fest = $publish->execute($fest);
 
-        $meetup = $create->execute(new EventData('Laravel Meetup', 'laravel-meetup', 'Talks and pizza.', 'Co-working Space KL', $day(10, 18), $day(10, 21)));
+        $meetup = $create->execute(new EventData('Laravel Meetup', 'laravel-meetup', 'Talks and pizza.', 'Co-working Space KL', $day(10, 18), $day(10, 21), 'Level 3, Menara KL, 50450 Kuala Lumpur'));
         $tier->execute($meetup, ['name' => 'Free seat', 'price_minor' => 0, 'quantity' => 80, 'max_per_order' => 2]);
         $tier->execute($meetup, ['name' => 'Supporter', 'price_minor' => 2000, 'quantity' => 50, 'max_per_order' => 5]);
         $meetup = $publish->execute($meetup);

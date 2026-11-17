@@ -75,7 +75,8 @@ The table is created by a tenant migration only; Sanctum's own migration is neve
 | column | type | notes |
 |---|---|---|
 | id | bigint PK | |
-| title, venue | varchar | |
+| title, venue_name | varchar | |
+| venue_address | varchar(500), nullable | |
 | slug | varchar(120) | public URL key |
 | description | text null | |
 | starts_at, ends_at | timestamptz | stored in UTC, shown in the tenant timezone |

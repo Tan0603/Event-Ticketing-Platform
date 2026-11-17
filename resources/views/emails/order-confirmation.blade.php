@@ -19,7 +19,7 @@
     <tr>
         <td style="padding:16px 28px;">
             <p style="margin:0;font-size:14px;"><strong>When:</strong> {{ $startsAt }}</p>
-            <p style="margin:4px 0 0 0;font-size:14px;"><strong>Where:</strong> {{ $event->venue }}</p>
+            <p style="margin:4px 0 0 0;font-size:14px;"><strong>Where:</strong> {{ $event->venue_name }}@if ($event->venue_address), {{ $event->venue_address }}@endif</p>
             <p style="margin:4px 0 0 0;font-size:14px;"><strong>Order:</strong> {{ $order->reference }}</p>
         </td>
     </tr>

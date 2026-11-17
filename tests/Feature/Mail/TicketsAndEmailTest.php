@@ -37,7 +37,7 @@ beforeEach(function () {
     $this->pub = ['X-Tenant-ID' => 'acme-events'];
 
     [$this->event, $this->vip, $this->general] = $this->tenant->run(function () {
-        $event = Event::factory()->published()->create(['slug' => 'sunset', 'title' => 'Sunset Fest', 'venue' => 'Main Hall', 'starts_at' => '2027-03-01 11:00:00', 'ends_at' => '2027-03-01 15:00:00']);
+        $event = Event::factory()->published()->create(['slug' => 'sunset', 'title' => 'Sunset Fest', 'venue_name' => 'Main Hall', 'starts_at' => '2027-03-01 11:00:00', 'ends_at' => '2027-03-01 15:00:00']);
 
         return [
             $event,
