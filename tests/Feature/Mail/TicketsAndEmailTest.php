@@ -129,8 +129,8 @@ describe('confirmation e-mail', function () {
                 $mail->assertSeeInHtml('Hi Aisha Rahman');
                 $mail->assertSeeInHtml($reference);
                 $mail->assertSeeInHtml('Main Hall');
-                $mail->assertSeeInHtml('MYR 231.50'); // total paid
-                $mail->assertSeeInHtml('MYR 11.50');  // fees
+                $mail->assertSeeInHtml('MYR 232.50'); // total paid
+                $mail->assertSeeInHtml('MYR 12.50');  // fees
                 $mail->assertSeeInHtml('2 &times; General', false);
                 foreach ($codes as $code) {
                     $mail->assertSeeInHtml($code);

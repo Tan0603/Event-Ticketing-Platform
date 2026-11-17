@@ -36,6 +36,8 @@ class OrderResource extends JsonResource
                 'name' => $item->ticket_type_name,
                 'unit_price_minor' => $item->unit_price_minor,
                 'quantity' => $item->quantity,
+                'unit_fee_minor' => $item->unit_fee_minor,
+                'line_fee_minor' => $item->line_fee_minor,
                 'line_total_minor' => $item->line_total_minor,
             ])->all()),
             'tickets' => $this->whenLoaded('tickets', fn () => $this->tickets->map(fn (Ticket $ticket): array => [

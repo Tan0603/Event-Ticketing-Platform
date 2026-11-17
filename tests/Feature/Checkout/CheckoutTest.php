@@ -47,8 +47,10 @@ describe('placing an order', function () {
             ->assertJsonPath('data.buyer_email', 'aisha@example.com')
             ->assertJsonPath('data.currency', 'MYR')
             ->assertJsonPath('data.subtotal_minor', 22000)   // 12000 + 2 * 5000
-            ->assertJsonPath('data.fee_minor', 1150)         // 5 % of 22000 = 1100, + 50
-            ->assertJsonPath('data.total_minor', 23150)
+            ->assertJsonPath('data.fee_minor', 1250)         // per ticket: VIP 600 + 50, General 250 + 50 (x2)
+            ->assertJsonPath('data.total_minor', 23250)
+            ->assertJsonPath('data.items.0.unit_fee_minor', 650)
+            ->assertJsonPath('data.items.1.line_fee_minor', 600)
             ->assertJsonPath('data.items.0.name', 'VIP')
             ->assertJsonPath('data.items.1.line_total_minor', 10000)
             ->assertJsonPath('data.expires_at', '2027-01-01T08:10:00+08:00'); // now + 10 min, shown in KL time
@@ -56,6 +58,21 @@ describe('placing an order', function () {
         expect($response->json('data.reference'))->toMatch('/^ORD-[A-Z0-9]{12}$/')
             ->and(($this->stock)($this->vip))->toBe(['sold' => 0, 'held' => 1])
             ->and(($this->stock)($this->general))->toBe(['sold' => 0, 'held' => 2]);
+    });
+
+    it('prices the spec worked example exactly: fee per ticket, total 159.97', function () {
+        $ids = $this->tenant->run(fn () => [
+            TicketType::factory()->for($this->event)->create(['name' => 'GA', 'price_minor' => 4500, 'quantity' => 50])->id,
+            TicketType::factory()->for($this->event)->create(['name' => 'Early Bird', 'price_minor' => 1999, 'quantity' => 50])->id,
+        ]);
+
+        $this->postJson('/api/events/sunset/checkout', checkoutBody([[$ids[0], 2], [$ids[1], 3]]), $this->pub)
+            ->assertCreated()
+            ->assertJsonPath('data.subtotal_minor', 14997)
+            ->assertJsonPath('data.fee_minor', 1000)
+            ->assertJsonPath('data.total_minor', 15997)
+            ->assertJsonPath('data.items.0.line_fee_minor', 550)   // 2 x (2.25 + 0.50)
+            ->assertJsonPath('data.items.1.line_fee_minor', 450);  // 3 x (1.00 + 0.50), 0.9995 rounds half-up
     });
 
     it('keeps the price the buyer saw even if the tier is repriced afterwards', function () {

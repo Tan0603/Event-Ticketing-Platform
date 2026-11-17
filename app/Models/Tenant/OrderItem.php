@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $unit_price_minor
  * @property int $quantity
  * @property int $line_total_minor
+ * @property int $unit_fee_minor
+ * @property int $line_fee_minor
  */
 class OrderItem extends Model
 {
@@ -23,7 +25,7 @@ class OrderItem extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['unit_price_minor' => 'integer', 'quantity' => 'integer', 'line_total_minor' => 'integer'];
+        return ['unit_price_minor' => 'integer', 'quantity' => 'integer', 'line_total_minor' => 'integer', 'unit_fee_minor' => 'integer', 'line_fee_minor' => 'integer'];
     }
 
     /** @return BelongsTo<Order, $this> */

@@ -75,7 +75,7 @@ describe('expiring pending orders', function () {
         $reference = ($this->buy)(2);
         Carbon::setTestNow(now()->addMinutes(config('ticketing.hold_minutes') + 1));
 
-        $body = json_encode(['id' => 'evt_1', 'type' => 'payment.succeeded', 'data' => ['order_reference' => $reference, 'amount_minor' => 10550, 'currency' => 'MYR']]);
+        $body = json_encode(['id' => 'evt_1', 'type' => 'payment.succeeded', 'data' => ['order_reference' => $reference, 'amount_minor' => 10600, 'currency' => 'MYR']]);
         $this->call('POST', '/api/webhooks/acme-events/payments', [], [], [], [
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret),

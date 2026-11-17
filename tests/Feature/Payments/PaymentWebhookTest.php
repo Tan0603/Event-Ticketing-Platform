@@ -44,7 +44,7 @@ beforeEach(function () {
         return [$event, TicketType::factory()->for($event)->create(['name' => 'General', 'price_minor' => 5000, 'quantity' => 10, 'max_per_order' => 5])];
     });
 
-    // A pending order for 2 tickets: subtotal 10000, fee 550, total 10550.
+    // A pending order for 2 tickets: subtotal 10000, fee 600, total 10600.
     $this->placeOrder = function (int $qty = 2, array $headers = []): array {
         $response = $this->postJson('/api/events/sunset/checkout', [
             'buyer_name' => 'Aisha', 'buyer_email' => 'aisha@example.com',

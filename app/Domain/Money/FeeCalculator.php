@@ -7,7 +7,9 @@ use InvalidArgumentException;
 /**
  * The only place fee and total maths happens. Integer minor units only: no floats, no round().
  *
- * Fee = percentage of the subtotal (half-up) + a fixed amount per order. A free order has no fee.
+ * The booking fee is charged PER TICKET: percentage of that ticket's unit price (half-up) plus a fixed amount.
+ * A free ticket carries no fee (assumption, see README). A line's fee is the ticket fee times its quantity, so a
+ * line total and the order total always add up exactly.
  */
 final class FeeCalculator
 {
@@ -26,19 +28,31 @@ final class FeeCalculator
         return intdiv($amountMinor * $bps + intdiv(self::BPS_DENOMINATOR, 2), self::BPS_DENOMINATOR);
     }
 
-    public static function fee(int $subtotalMinor, int $bps, int $fixedMinor): int
+    /** Fee for ONE ticket: percent of its unit price (rounded half-up) + the fixed fee. Free tickets pay none. */
+    public static function ticketFee(int $unitPriceMinor, int $bps, int $fixedMinor): int
     {
-        if ($subtotalMinor === 0) {
+        if ($unitPriceMinor === 0) {
             return 0;
         }
 
-        return self::percentFee($subtotalMinor, $bps) + $fixedMinor;
+        return self::percentFee($unitPriceMinor, $bps) + $fixedMinor;
     }
 
-    public static function totals(int $subtotalMinor, int $bps, int $fixedMinor): OrderTotals
+    /**
+     * Totals for an order given its lines as [unit price minor, quantity] pairs.
+     *
+     * @param  array<int, array{0: int, 1: int}>  $lines
+     */
+    public static function totals(array $lines, int $bps, int $fixedMinor): OrderTotals
     {
-        $fee = self::fee($subtotalMinor, $bps, $fixedMinor);
+        $subtotal = 0;
+        $fees = 0;
 
-        return new OrderTotals($subtotalMinor, $fee, $subtotalMinor + $fee);
+        foreach ($lines as [$unitPrice, $quantity]) {
+            $subtotal += $unitPrice * $quantity;
+            $fees += self::ticketFee($unitPrice, $bps, $fixedMinor) * $quantity;
+        }
+
+        return new OrderTotals($subtotal, $fees, $subtotal + $fees);
     }
 }

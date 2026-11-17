@@ -12,10 +12,10 @@ use Illuminate\Support\Facades\Mail;
 
 /*
  * Timeline (tenant timezone Asia/Kuala_Lumpur, UTC+8):
- *   Jan 4 10:00 UTC (18:00 KL)  order1 = 2 x General  -> 10550   paid
+ *   Jan 4 10:00 UTC (18:00 KL)  order1 = 2 x General  -> 10600   paid
  *   Jan 4 10:00 UTC (18:00 KL)  order2 = 1 x VIP      -> 12650   paid
  *   Jan 4 17:00 UTC (01:00 KL on Jan 5!)  order3 = 1 x General -> 5300   paid
- *   Jan 6 03:00 UTC (11:00 KL)  order1 refunded (10550)
+ *   Jan 6 03:00 UTC (11:00 KL)  order1 refunded (10600)
  *   a pending order (1 x General) still holds a ticket
  */
 beforeEach(function () {
@@ -73,13 +73,13 @@ describe('sales by day', function () {
 
         expect($report['days'])->toHaveCount(5)
             ->and($days['2027-01-03'])->toMatchArray(['orders_paid' => 0, 'gross_minor' => 0, 'refunded_minor' => 0, 'net_minor' => 0])
-            ->and($days['2027-01-04'])->toMatchArray(['orders_paid' => 2, 'gross_minor' => 23200, 'fees_minor' => 1200, 'refunds' => 0, 'refunded_minor' => 0, 'net_minor' => 23200])
+            ->and($days['2027-01-04'])->toMatchArray(['orders_paid' => 2, 'gross_minor' => 23250, 'fees_minor' => 1250, 'refunds' => 0, 'refunded_minor' => 0, 'net_minor' => 23250])
             // 17:00 UTC is already the next day in Kuala Lumpur
             ->and($days['2027-01-05'])->toMatchArray(['orders_paid' => 1, 'gross_minor' => 5300, 'fees_minor' => 300])
             // the refunded order stays a sale on Jan 4 and shows up as a refund on Jan 6
-            ->and($days['2027-01-06'])->toMatchArray(['orders_paid' => 0, 'gross_minor' => 0, 'refunds' => 1, 'refunded_minor' => 10550, 'net_minor' => -10550])
+            ->and($days['2027-01-06'])->toMatchArray(['orders_paid' => 0, 'gross_minor' => 0, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => -10600])
             ->and($days['2027-01-07']['orders_paid'])->toBe(0)
-            ->and($report['totals'])->toBe(['orders_paid' => 3, 'gross_minor' => 28500, 'fees_minor' => 1500, 'refunds' => 1, 'refunded_minor' => 10550, 'net_minor' => 17950]);
+            ->and($report['totals'])->toBe(['orders_paid' => 3, 'gross_minor' => 28550, 'fees_minor' => 1550, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => 17950]);
     });
 
     it('leaves out pending orders and days outside the range', function () {
@@ -115,7 +115,7 @@ describe('dashboard', function () {
 
         expect($data['currency'])->toBe('MYR')
             ->and($data['orders_by_status'])->toBe(['pending' => 1, 'paid' => 2, 'failed' => 0, 'expired' => 0, 'refunded' => 1])
-            ->and($data['sales'])->toBe(['orders_paid' => 3, 'gross_minor' => 28500, 'fees_minor' => 1500, 'refunds' => 1, 'refunded_minor' => 10550, 'net_minor' => 17950])
+            ->and($data['sales'])->toBe(['orders_paid' => 3, 'gross_minor' => 28550, 'fees_minor' => 1550, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => 17950])
             ->and($data['tickets'])->toBe(['sold' => 2, 'held' => 1, 'capacity' => 60, 'checked_in' => 0, 'awaiting_check_in' => 2])
             ->and($data['upcoming_events'])->toBe(1)
             ->and($data['top_events'])->toBe([['id' => $this->event->id, 'title' => 'Sunset Fest', 'orders' => 2, 'net_minor' => 17950]]);
@@ -201,6 +201,6 @@ describe('access and isolation', function () {
         $this->getJson('/api/admin/reports/sales?from=2027-01-03&to=2027-01-07', $otherAdmin)->assertJsonPath('data.totals.gross_minor', 0);
         $this->getJson("/api/admin/events/{$this->event->id}/report", $otherAdmin)->assertNotFound();
         // and the cached numbers of A are still A's
-        $this->getJson('/api/admin/dashboard', $this->admin)->assertJsonPath('data.sales.gross_minor', 28500);
+        $this->getJson('/api/admin/dashboard', $this->admin)->assertJsonPath('data.sales.gross_minor', 28550);
     });
 });
