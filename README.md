@@ -174,6 +174,24 @@ so a link cannot be replayed against another tenant. Mails are delivered by Hori
 starts it); open Mailpit at http://localhost:8026 to read them. A failed send is retried (10 s, 1 m, 5 m, 15 m),
 then recorded as `failed` on the notification row.
 
+## Check-in (door staff and admins)
+
+`POST /api/check-in` with `{"code": "...", "event_id": 12}` (`event_id` optional: the gate the scanner is
+working). The decision is one statement, `UPDATE tickets SET status='used' ... WHERE code=? AND status='valid'
+... RETURNING`, so of two scanners racing on one code exactly one wins; there is no read-then-write in PHP.
+
+| result | status | `error` |
+|---|---|---|
+| admitted | 200 | |
+| unknown code (also another tenant's code) | 404 | `ticket_not_found` |
+| scanned before | 409 | `already_checked_in` (message has the first scan time) |
+| refunded | 409 | `ticket_void` |
+| event cancelled | 409 | `event_cancelled` |
+| ticket of another event than `event_id` | 409 | `wrong_event` |
+
+Codes are trimmed and upper-cased, so a hand-typed code works. Throttled per staff member
+(`ticketing.rate_limits.checkin_per_minute`, 120).
+
 ## Scheduled tasks
 
 The `scheduler` container runs `schedule:work`. Each task only dispatches **one job per active tenant**

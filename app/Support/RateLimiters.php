@@ -45,6 +45,11 @@ final class RateLimiters
         RateLimiter::for('webhook', fn (Request $request): Limit => self::limit('webhook_per_minute', 60)
             ->by(TenantKey::for('webhook', (string) $request->ip())));
 
+        // Per tenant + staff member: a busy entrance scans several tickets a second, but a stolen token cannot
+        // be used to guess ticket codes at machine speed.
+        RateLimiter::for('check-in', fn (Request $request): Limit => self::limit('checkin_per_minute', 60)
+            ->by(TenantKey::for('check-in', (string) $request->user()?->getAuthIdentifier())));
+
         RateLimiter::for('register-status', fn (Request $request): Limit => self::limit('register_status_per_minute', 60)
             ->by(TenantKey::central('register-status', 'ip', (string) $request->ip())));
     }

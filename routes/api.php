@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
+use App\Http\Controllers\CheckInController;
 use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
 use App\Http\Controllers\Storefront\TicketController;
@@ -52,6 +53,9 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
 
     Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+        // Door staff and admins scan tickets at the entrance.
+        Route::post('/check-in', [CheckInController::class, 'store'])->middleware(['can:check-in', 'throttle:check-in']);
 
         Route::middleware('can:access-admin')->prefix('admin')->group(function () {
             Route::apiResource('events', EventController::class);

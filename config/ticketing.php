@@ -36,6 +36,7 @@ return [
         'checkout_per_minute_ip' => (int) env('TICKETING_CHECKOUT_IP_LIMIT', 300),
         'storefront_per_minute' => (int) env('TICKETING_STOREFRONT_RATE_LIMIT', 120),
         'login_per_minute' => (int) env('TICKETING_LOGIN_RATE_LIMIT', 5),
+        'checkin_per_minute' => (int) env('TICKETING_CHECKIN_RATE_LIMIT', 120),
         'webhook_per_minute' => (int) env('TICKETING_WEBHOOK_RATE_LIMIT', 300),
     ],
 
