@@ -30,8 +30,8 @@ beforeEach(function () {
             'buyer_name' => 'Aisha Rahman', 'buyer_email' => 'aisha@example.com',
             'items' => [['ticket_type_id' => $typeId ?? $this->type->id, 'quantity' => $quantity]],
         ], $this->pub)->assertCreated();
-        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'data' => ['order_reference' => $reference->json('data.reference'), 'amount_minor' => $reference->json('data.total_minor'), 'currency' => 'MYR']]);
-        $this->call('POST', '/api/webhooks/acme-events/payments', [], [], [], [
+        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'payment_reference' => paymentRef($reference->json('data.reference')), 'amount' => $reference->json('data.total_minor'), 'currency' => 'MYR']);
+        $this->call('POST', '/api/webhooks/payments/acme-events', [], [], [], [
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret),
         ], $body)->assertOk();

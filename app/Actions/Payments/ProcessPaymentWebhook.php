@@ -3,10 +3,13 @@
 namespace App\Actions\Payments;
 
 use App\Actions\Orders\ReleaseOrder;
+use App\Domain\Orders\OrderStateMachine;
 use App\Enums\OrderStatus;
 use App\Models\Tenant\Event;
 use App\Models\Tenant\Order;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ProcessPaymentWebhook
 {
@@ -59,12 +62,13 @@ class ProcessPaymentWebhook
     /** @param array<string, mixed> $payload */
     private function apply(array $payload): WebhookResult
     {
-        $reference = (string) $payload['data']['order_reference'];
+        $paymentReference = (string) $payload['payment_reference'];
 
-        $known = Order::query()->where('reference', $reference)->first(['id', 'event_id']);
+        $known = Order::query()->where('payment_reference', $paymentReference)->first(['id', 'event_id', 'reference']);
         if ($known === null) {
-            return new WebhookResult('unknown_order', $reference);
+            return new WebhookResult('unknown_order');
         }
+        $reference = $known->reference;
 
         // Lock order: event (shared) -> order -> ticket types (inside the actions below).
         Event::query()->sharedLock()->findOrFail($known->event_id);
@@ -72,7 +76,7 @@ class ProcessPaymentWebhook
         $order = Order::query()->lockForUpdate()->with('items')->findOrFail($known->id);
 
         $outcome = $payload['type'] === self::SUCCEEDED
-            ? $this->paymentSucceeded($order, $payload['data'])
+            ? $this->paymentSucceeded($order, $payload)
             : $this->paymentFailed($order);
 
         return new WebhookResult($outcome->outcome, $reference, $outcome->httpStatus, $order->id);
@@ -82,7 +86,15 @@ class ProcessPaymentWebhook
     private function paymentSucceeded(Order $order, array $data): WebhookResult
     {
         // The amount comes from the provider, the truth from our snapshot: never mark an order paid on a mismatch.
-        if ((int) $data['amount_minor'] !== $order->total_minor || (isset($data['currency']) && strtoupper((string) $data['currency']) !== $order->currency)) {
+        if ((int) $data['amount'] !== $order->total_minor || strtoupper((string) $data['currency']) !== $order->currency) {
+            Log::warning('Payment webhook does not match the order', [
+                'tenant' => tenant()?->getTenantKey(),
+                'order' => $order->reference,
+                'webhook_id' => $data['id'],
+                'expected' => [$order->total_minor, $order->currency],
+                'received' => [$data['amount'], $data['currency']],
+            ]);
+
             return new WebhookResult('amount_mismatch', null, 422);
         }
 
@@ -91,7 +103,7 @@ class ProcessPaymentWebhook
             OrderStatus::Pending => $this->pay($order),
             OrderStatus::Expired => $this->payLate($order),
             OrderStatus::Paid => new WebhookResult('already_paid'),
-            OrderStatus::Failed, OrderStatus::Refunded => new WebhookResult('ignored'),
+            OrderStatus::Failed, OrderStatus::RefundPending, OrderStatus::Refunded => new WebhookResult('ignored'),
         };
     }
 
@@ -116,8 +128,14 @@ class ProcessPaymentWebhook
     private function payLate(Order $order): WebhookResult
     {
         // All or nothing: if one line is gone, the lines already sold are given back.
-        $paid = $this->markPaid->executeLate($order);
+        if ($this->markPaid->executeLate($order)) {
+            return new WebhookResult('paid_late');
+        }
 
-        return new WebhookResult($paid ? 'paid_late' : 'late_payment_no_stock');
+        // The money is taken but the seats are gone: no tickets, the organizer has to refund (spec section 6).
+        OrderStateMachine::transition($order, OrderStatus::RefundPending);
+        StorefrontCache::flush();
+
+        return new WebhookResult('late_payment_no_stock');
     }
 }

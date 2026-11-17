@@ -21,7 +21,7 @@ function sendWebhook(string $tenantId, array|string $payload, ?string $secret = 
     $secret ??= Tenant::query()->findOrFail($tenantId)->webhook_secret;
     $signature ??= hash_hmac('sha256', $body, (string) $secret);
 
-    return test()->call('POST', "/api/webhooks/{$tenantId}/payments", [], [], [], [
+    return test()->call('POST', "/api/webhooks/payments/{$tenantId}", [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_ACCEPT' => 'application/json',
         'HTTP_X_SIGNATURE' => $signature,
@@ -30,7 +30,8 @@ function sendWebhook(string $tenantId, array|string $payload, ?string $secret = 
 
 function paymentEvent(string $id, string $type, string $reference, ?int $amount = null, string $currency = 'MYR'): array
 {
-    return ['id' => $id, 'type' => $type, 'data' => array_filter(['order_reference' => $reference, 'amount_minor' => $amount, 'currency' => $currency], fn ($v) => $v !== null)];
+    return ['id' => $id, 'type' => $type, 'payment_reference' => paymentRef($reference)]
+        + array_filter(['amount' => $amount, 'currency' => $currency, 'occurred_at' => '2027-01-01T00:00:00Z'], fn ($v) => $v !== null);
 }
 
 beforeEach(function () {
@@ -172,7 +173,8 @@ describe('late payments (the hold already expired)', function () {
 
         sendWebhook('acme-events', paymentEvent('evt_1', 'payment.succeeded', $reference, $total))->assertOk()->assertJson(['status' => 'late_payment_no_stock']);
 
-        expect(($this->orderStatus)($reference))->toBe(OrderStatus::Expired)->and(($this->stock)())->toBe(['sold' => 8, 'held' => 0]);
+        expect(($this->orderStatus)($reference))->toBe(OrderStatus::RefundPending)->and(($this->stock)())->toBe(['sold' => 8, 'held' => 0]);
+        expect($this->tenant->run(fn () => DB::table('tickets')->count()))->toBe(0); // money taken, no tickets issued
         expect($this->tenant->run(fn () => DB::table('webhook_events')->value('outcome')))->toBe('late_payment_no_stock'); // recorded for a refund
     });
 });
@@ -290,9 +292,9 @@ describe('payments:simulate', function () {
         Http::assertSent(function ($request) use ($reference, $total) {
             $secret = Tenant::query()->find('acme-events')->webhook_secret;
 
-            return $request->url() === 'http://api.test/api/webhooks/acme-events/payments'
+            return $request->url() === 'http://api.test/api/webhooks/payments/acme-events'
                 && hash_equals(hash_hmac('sha256', $request->body(), $secret), $request->header('X-Signature')[0])
-                && json_decode($request->body(), true)['data'] === ['order_reference' => $reference, 'amount_minor' => $total, 'currency' => 'MYR'];
+                && array_intersect_key(json_decode($request->body(), true), array_flip(['payment_reference', 'amount', 'currency'])) === ['payment_reference' => paymentRef($reference), 'amount' => $total, 'currency' => 'MYR'];
         });
     });
 

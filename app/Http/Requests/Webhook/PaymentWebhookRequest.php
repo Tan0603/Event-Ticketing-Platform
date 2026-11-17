@@ -22,10 +22,10 @@ class PaymentWebhookRequest extends FormRequest
         return [
             'id' => ['required', 'string', 'max:100'],
             'type' => ['required', Rule::in([ProcessPaymentWebhook::SUCCEEDED, ProcessPaymentWebhook::FAILED])],
-            'data' => ['required', 'array'],
-            'data.order_reference' => ['required', 'string', 'max:20'],
-            'data.amount_minor' => [$succeeded ? 'required' : 'nullable', 'integer', 'min:0'],
-            'data.currency' => ['nullable', 'string', 'size:3'],
+            'payment_reference' => ['required', 'string', 'max:40'],
+            'amount' => [$succeeded ? 'required' : 'nullable', 'integer', 'min:0'],
+            'currency' => [$succeeded ? 'required' : 'nullable', 'string', 'size:3'],
+            'occurred_at' => ['nullable', 'date'],
         ];
     }
 

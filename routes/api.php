@@ -30,7 +30,7 @@ Route::get('/register/{tenantId}', [RegisterController::class, 'show'])
  * Payment provider webhook: it cannot send our header, so the tenant is the {tenant} path segment, and the
  * signature is checked with THAT tenant's secret before the body is read.
  */
-Route::post('/webhooks/{tenant}/payments', [PaymentWebhookController::class, 'handle'])
+Route::post('/webhooks/payments/{tenant}', [PaymentWebhookController::class, 'handle'])
     ->middleware(['tenant.path', 'tenant.active', 'throttle:webhook', 'webhook.signature']);
 
 /*

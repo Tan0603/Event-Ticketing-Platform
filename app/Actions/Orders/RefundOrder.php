@@ -39,16 +39,19 @@ class RefundOrder
             /** @var Order $order */
             $order = Order::query()->lockForUpdate()->with('items')->findOrFail($orderId);
 
-            if ($order->status !== OrderStatus::Paid) {
-                throw new BusinessRuleException('invalid_order_state', "Only a paid order can be refunded; this one is {$order->status->value}.");
+            if (! in_array($order->status, [OrderStatus::Paid, OrderStatus::RefundPending], true)) {
+                throw new BusinessRuleException('invalid_order_state', "Only a paid or refund-pending order can be refunded; this one is {$order->status->value}.");
             }
 
+            // A refund_pending order never held stock or tickets (the late payment found none), so there is nothing to give back.
             $seats = 0;
-            $items = $order->items->pluck('quantity', 'ticket_type_id')->map(fn ($q): int => (int) $q)->all();
-            ksort($items); // ascending ticket type id
-            foreach ($items as $ticketTypeId => $quantity) {
-                TicketStock::returnSold($ticketTypeId, $quantity);
-                $seats += $quantity;
+            if ($order->status === OrderStatus::Paid) {
+                $items = $order->items->pluck('quantity', 'ticket_type_id')->map(fn ($q): int => (int) $q)->all();
+                ksort($items); // ascending ticket type id
+                foreach ($items as $ticketTypeId => $quantity) {
+                    TicketStock::returnSold($ticketTypeId, $quantity);
+                    $seats += $quantity;
+                }
             }
 
             // Void every ticket still valid. A scan racing with us holds the row lock: we wait, then see it as

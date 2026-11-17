@@ -10,7 +10,7 @@ it('shows an admin the webhook url and secret', function () {
         ->assertJsonPath('data.tenant_id', 'acme-events')
         ->assertJsonPath('data.currency', 'MYR')
         ->assertJsonPath('data.fee_percent_bps', 500)
-        ->assertJsonPath('data.payments.webhook_url', url('/api/webhooks/acme-events/payments'));
+        ->assertJsonPath('data.payments.webhook_url', url('/api/webhooks/payments/acme-events'));
 
     // the secret shown is the one the webhook endpoint verifies with
     expect($response->json('data.payments.webhook_secret'))->toBe(Tenant::query()->find('acme-events')->webhook_secret)->not->toBeEmpty();

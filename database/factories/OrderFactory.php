@@ -22,6 +22,7 @@ class OrderFactory extends Factory
     {
         return [
             'reference' => 'ORD-'.Str::upper(Str::random(12)),
+            'payment_reference' => 'pay_'.Str::lower(Str::random(12)),
             'event_id' => Event::factory(),
             'buyer_name' => fake()->name(),
             'buyer_email' => strtolower(fake()->unique()->safeEmail()),

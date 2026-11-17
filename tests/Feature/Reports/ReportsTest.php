@@ -41,8 +41,8 @@ beforeEach(function () {
     $this->sell = function (int $typeId, int $quantity, string $at, string $email = 'buyer@example.com') {
         Carbon::setTestNow($at);
         $order = ($this->checkout)($typeId, $quantity, $email);
-        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'data' => ['order_reference' => $order->json('data.reference'), 'amount_minor' => $order->json('data.total_minor'), 'currency' => 'MYR']]);
-        $this->call('POST', '/api/webhooks/acme-events/payments', [], [], [], [
+        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'payment_reference' => paymentRef($order->json('data.reference')), 'amount' => $order->json('data.total_minor'), 'currency' => 'MYR']);
+        $this->call('POST', '/api/webhooks/payments/acme-events', [], [], [], [
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret),
         ], $body)->assertOk();
@@ -114,7 +114,7 @@ describe('dashboard', function () {
         $data = $this->getJson('/api/admin/dashboard', $this->admin)->assertOk()->json('data');
 
         expect($data['currency'])->toBe('MYR')
-            ->and($data['orders_by_status'])->toBe(['pending' => 1, 'paid' => 2, 'failed' => 0, 'expired' => 0, 'refunded' => 1])
+            ->and($data['orders_by_status'])->toBe(['pending' => 1, 'paid' => 2, 'failed' => 0, 'expired' => 0, 'refund_pending' => 0, 'refunded' => 1])
             ->and($data['sales'])->toBe(['orders_paid' => 3, 'gross_minor' => 28550, 'fees_minor' => 1550, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => 17950])
             ->and($data['tickets'])->toBe(['sold' => 2, 'held' => 1, 'capacity' => 60, 'checked_in' => 0, 'awaiting_check_in' => 2])
             ->and($data['upcoming_events'])->toBe(1)
@@ -173,7 +173,7 @@ describe('event report', function () {
             ->and($types['General'])->toMatchArray(['capacity' => 50, 'sold' => 1, 'held' => 1, 'available' => 48, 'gross_minor' => 15000, 'refunded_minor' => 10000, 'net_minor' => 5000, 'checked_in' => 0, 'awaiting_check_in' => 1, 'void' => 2])
             ->and($types['VIP'])->toMatchArray(['capacity' => 10, 'sold' => 1, 'gross_minor' => 12000, 'refunded_minor' => 0, 'net_minor' => 12000, 'checked_in' => 1, 'awaiting_check_in' => 0, 'void' => 0])
             ->and($data['totals'])->toMatchArray(['capacity' => 60, 'sold' => 2, 'held' => 1, 'gross_minor' => 27000, 'refunded_minor' => 10000, 'net_minor' => 17000, 'fees_minor' => 950, 'checked_in' => 1, 'awaiting_check_in' => 1, 'void' => 2])
-            ->and($data['orders_by_status'])->toBe(['pending' => 1, 'paid' => 2, 'failed' => 0, 'expired' => 0, 'refunded' => 1]);
+            ->and($data['orders_by_status'])->toBe(['pending' => 1, 'paid' => 2, 'failed' => 0, 'expired' => 0, 'refund_pending' => 0, 'refunded' => 1]);
     });
 
     it('answers 404 for an unknown event', function () {

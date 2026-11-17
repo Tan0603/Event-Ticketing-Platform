@@ -38,8 +38,8 @@ beforeEach(function () {
     // A paid order: returns its reference.
     $this->sell = function (int $quantity = 2, string $email = 'aisha@example.com') {
         $order = ($this->checkout)($quantity, $email);
-        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'data' => ['order_reference' => $order->json('data.reference'), 'amount_minor' => $order->json('data.total_minor'), 'currency' => 'MYR']]);
-        $this->call('POST', '/api/webhooks/acme-events/payments', [], [], [], [
+        $body = json_encode(['id' => 'evt_'.uniqid(), 'type' => 'payment.succeeded', 'payment_reference' => paymentRef($order->json('data.reference')), 'amount' => $order->json('data.total_minor'), 'currency' => 'MYR']);
+        $this->call('POST', '/api/webhooks/payments/acme-events', [], [], [], [
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_SIGNATURE' => hash_hmac('sha256', $body, Tenant::query()->find('acme-events')->webhook_secret),
         ], $body)->assertOk();
@@ -133,6 +133,20 @@ describe('refunding an order', function () {
 
         ($this->refund)($pending)->assertStatus(409)->assertJsonPath('error', 'invalid_order_state');
         expect(($this->stock)())->toBe(['sold' => 0, 'held' => 1]);
+    });
+
+    it('refunds a refund_pending order (late payment, no stock) without touching stock or tickets', function () {
+        $reference = ($this->checkout)(2)->json('data.reference');
+        // What a late payment with no stock left leaves behind: money taken, hold gone, no tickets.
+        $this->tenant->run(function () use ($reference) {
+            DB::table('orders')->where('reference', $reference)->update(['status' => OrderStatus::RefundPending->value]);
+            DB::table('ticket_types')->where('id', $this->type->id)->update(['held' => 0, 'sold' => 18]);
+        });
+
+        ($this->refund)($reference, ['reason' => 'Sold out meanwhile'])->assertOk()->assertJsonPath('data.status', 'refunded');
+
+        expect(($this->stock)())->toBe(['sold' => 18, 'held' => 0]) // nothing was returned: this order never held stock
+            ->and($this->tenant->run(fn () => Refund::query()->count()))->toBe(1);
     });
 
     it('refuses, and changes nothing, when a ticket was already used at the door', function () {
