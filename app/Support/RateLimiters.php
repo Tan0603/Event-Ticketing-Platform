@@ -33,6 +33,13 @@ final class RateLimiters
         RateLimiter::for('storefront', fn (Request $request): Limit => self::limit('storefront_per_minute', 60)
             ->by(TenantKey::for('storefront', (string) $request->ip())));
 
+        // Two independent limits per tenant: a strict one per buyer e-mail (stops one person hoarding stock) and a
+        // generous one per IP (shared offices / NAT must still be able to buy).
+        RateLimiter::for('checkout', fn (Request $request): array => [
+            self::limit('checkout_per_minute_email', 60)->by(TenantKey::for('checkout', 'email', strtolower((string) $request->input('buyer_email')))),
+            self::limit('checkout_per_minute_ip', 60)->by(TenantKey::for('checkout', 'ip', (string) $request->ip())),
+        ]);
+
         RateLimiter::for('register-status', fn (Request $request): Limit => self::limit('register_status_per_minute', 60)
             ->by(TenantKey::central('register-status', 'ip', (string) $request->ip())));
     }
