@@ -78,6 +78,12 @@ class Order extends Model
         return $this->belongsTo(Event::class);
     }
 
+    /** @return HasMany<Ticket, $this> */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class)->orderBy('id');
+    }
+
     /** @return HasMany<OrderItem, $this> */
     public function items(): HasMany
     {
