@@ -58,3 +58,14 @@ Added feature by feature (users, events, ticket types, orders, tickets, ...).
 | UNIQUE (email) | login lookup, and a retried provisioning can never create a second admin |
 | CHECK role IN ('admin','door_staff') | a role outside the enum can never be stored |
 | CHECK email = lower(email) | case-variants of one address cannot become two accounts |
+
+### `personal_access_tokens` (tenant database)
+
+Sanctum tokens. They live in the tenant database, so a token issued by tenant A does not exist in tenant B.
+Sanctum's own central migration is disabled (`Sanctum::ignoreMigrations()`).
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (token) | every authenticated request looks the token up by its SHA-256 hash |
+| INDEX (tokenable_type, tokenable_id) | revoke / list all tokens of a user |
+| INDEX (expires_at) | `sanctum:prune-expired` |

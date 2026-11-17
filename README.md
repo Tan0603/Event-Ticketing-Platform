@@ -52,6 +52,17 @@ docker compose exec app php artisan tenant:purge sunsetfest   # frees a failed i
 The `provisioning` queue needs a worker: `docker compose exec app php artisan queue:work --queue=provisioning,default`
 (Horizon replaces this in a later phase).
 
+## Authentication
+
+```bash
+curl -X POST http://localhost:8088/api/auth/login -H "X-Tenant-ID: sunsetfest" -H "Content-Type: application/json"   -d '{"email":"aisha@sunsetfest.test","password":"correct-horse-battery"}'
+# -> {"data":{"token":"1|...","token_type":"Bearer","expires_at":"...","user":{...}}}
+curl -X POST http://localhost:8088/api/auth/logout -H "X-Tenant-ID: sunsetfest" -H "Authorization: Bearer 1|..."
+```
+
+Tokens are Sanctum personal access tokens stored in the tenant database and bound to their tenant by an
+explicit `tenant:{id}` ability. Roles: `admin` (everything) and `door_staff` (check-in only), enforced by Gates.
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
@@ -70,3 +81,5 @@ Ambiguities in the assignment are recorded here as they are resolved.
   PHP version even when the developer machine runs a newer one.
 - **Dev database settings** (`fsync=off`, `synchronous_commit=off`) are used in `docker-compose.yml`
   to keep tests and the stress test fast. They are for local development only.
+- **Token lifetime is 12 hours** (`SANCTUM_EXPIRATION_MINUTES`). Logout revokes only the token that was used.
+- **Login is throttled** at 5/min per tenant + email + IP (`TICKETING_LOGIN_RATE_LIMIT`); the counter is tenant-scoped.

@@ -10,7 +10,6 @@ use App\Support\TenantDatabase;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
 
 function tenantUsers(Tenant $tenant): Collection
 {
@@ -31,14 +30,14 @@ describe('ProvisionTenant', function () {
             ->and($users[0]->role)->toBe(UserRole::Admin)
             ->and(Hash::check('secret-pass-1', $users[0]->password))->toBeTrue();
 
-        expect($tenant->run(fn () => Schema::hasTable('users')))->toBeTrue();
+        expect($tenant->run(fn () => DB::getSchemaBuilder()->hasTable('users')))->toBeTrue();
         expect(tenancy()->initialized)->toBeFalse(); // back in central context
     });
 
     it('keeps tenant data out of the central database', function () {
         provisionTenant('acme-events');
 
-        expect(Schema::hasTable('users'))->toBeFalse();
+        expect(centralTables())->not->toContain('users');
     });
 
     it('gives each tenant its own database', function () {
