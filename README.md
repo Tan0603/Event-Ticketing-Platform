@@ -78,6 +78,22 @@ All under `/api/admin`, admin role only, `X-Tenant-ID` + `Authorization: Bearer 
 
 Prices are integer minor units (`5000` = RM 50.00). Times: any ISO-8601 value; one without an offset is read in the tenant timezone, and responses show the tenant timezone.
 
+## Public shop (no login)
+
+`X-Tenant-ID` only, throttled per tenant + IP (`TICKETING_STOREFRONT_RATE_LIMIT`, 120/min).
+
+| method | path | what |
+|---|---|---|
+| GET | `/api/events` | published events that have not ended, soonest first; `q`, `from`, `to`, `page`, `per_page` |
+| GET | `/api/events/{slug}` | one event with its ticket types: price, `available`, `max_per_order`, `sales_status` |
+
+Drafts, cancelled and unknown events all return the same 404. Stock numbers (`sold`, `held`, `quantity`) are never exposed.
+
+**Caching** (Redis, keys built with `TenantKey`): the page's descriptive data for 10 minutes, the sold + held
+counters for 15 seconds, the list for 60 seconds. Sales status is derived at read time from the cached data plus
+the clock, so a tier flips to `on_sale` on time. Any admin change to an event or ticket type bumps a per-tenant
+version, which makes every cached page unreachable at once. The cache is display only: checkout decides stock in PostgreSQL.
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
@@ -102,3 +118,5 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **The slug of a published event is frozen** because its public link would break. Drafts can change it.
 - **A tier's sales window must end by the event end;** with no end set it stops selling when the event ends.
 - **Quantity can shrink only down to sold + held** (checked atomically, backed by a CHECK constraint).
+- **Cancelled events disappear from the public shop** (404, same as a draft). Their buyers are handled through orders and refunds, not the public page.
+- **Availability on the public page may lag by up to 15 seconds** (`TICKETING_CACHE_AVAILABILITY_TTL`). A buyer who sees tickets left can still be told "sold out" at checkout; PostgreSQL is the source of truth.
