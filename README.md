@@ -204,6 +204,16 @@ stock, every ticket becomes `void`, the order moves to `refunded` through the st
 written (UNIQUE `order_id`) and the buyer gets an e-mail. If any ticket was already scanned at the door the whole
 refund is refused (`tickets_already_used`) and nothing changes. Not paid: `invalid_order_state`.
 
+## Dashboard and reports (admin)
+
+All figures are SQL aggregates (`GROUP BY` / `SUM` / `COUNT ... FILTER`), integer minor units, cached per tenant for
+`ticketing.cache.dashboard_ttl` (60 s) and dropped when an order is paid, refunded or expired. Pending orders and
+holds can lag by up to the TTL.
+
+- `GET /api/admin/dashboard`: orders by status, gross / fees / refunds / net, tickets sold / held / capacity / checked in, upcoming events, top 5 events by net revenue.
+- `GET /api/admin/reports/sales?from=YYYY-MM-DD&to=YYYY-MM-DD`: one row per day in the tenant timezone (default: last 30 days, at most 366). **A refunded order counts as a sale on the day it was paid and as a refund on the day it was refunded** (your decision 6), so a day can have negative net.
+- `GET /api/admin/events/{event}/report`: per ticket type capacity, sold, held, gross, refunded, net, checked in, awaiting, void, plus totals.
+
 ## Scheduled tasks
 
 The `scheduler` container runs `schedule:work`. Each task only dispatches **one job per active tenant**
