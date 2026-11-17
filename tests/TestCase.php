@@ -24,6 +24,23 @@ abstract class TestCase extends BaseTestCase
         }
     }
 
+    /**
+     * Every HTTP request starts with fresh auth guards, like a real request in a fresh PHP worker. Without
+     * this the guard remembers the previous request's user and a test could pass or fail for the wrong reason
+     * (e.g. tenant A's token silently "working" on tenant B).
+     *
+     * @param  array<string, mixed>  $parameters
+     * @param  array<string, mixed>  $cookies
+     * @param  array<string, mixed>  $files
+     * @param  array<string, mixed>  $server
+     */
+    public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null)
+    {
+        $this->app['auth']->forgetGuards();
+
+        return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+    }
+
     protected function tearDown(): void
     {
         // A request that initialized tenancy leaves it initialized in the test process.

@@ -1,9 +1,12 @@
 <?php
 
+use App\Actions\Auth\LoginStaff;
 use App\Actions\Tenancy\ProvisionTenant;
 use App\Actions\Tenancy\RegisterTenant;
 use App\Actions\Tenancy\RegisterTenantData;
+use App\Enums\UserRole;
 use App\Models\Central\Tenant;
+use App\Models\Tenant\User;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -48,4 +51,22 @@ function provisionTenant(string $id = 'acme-events', string $adminEmail = 'admin
     app(RegisterTenant::class)->create($data);
 
     return app(ProvisionTenant::class)->run($id, $data->adminName, $adminEmail, $data->passwordHash);
+}
+
+/**
+ * Headers for an authenticated request to a tenant: the tenant header plus a bearer token for a user of
+ * the given role. Creates the token directly (cheaper than a login round trip, which Auth tests cover).
+ *
+ * @return array<string, string>
+ */
+function tenantHeaders(Tenant $tenant, UserRole $role = UserRole::Admin): array
+{
+    $token = $tenant->run(function () use ($tenant, $role) {
+        $user = User::query()->where('role', $role)->first()
+            ?? User::factory()->create(['role' => $role, 'email' => $role->value.'@'.$tenant->id.'.test']);
+
+        return $user->createToken('test', [LoginStaff::tenantAbility($tenant->id)])->plainTextToken;
+    });
+
+    return ['X-Tenant-ID' => $tenant->id, 'Authorization' => 'Bearer '.$token];
 }
