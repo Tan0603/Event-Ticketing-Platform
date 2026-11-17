@@ -129,18 +129,20 @@ never recomputed from `ticket_types` or the tenant settings.
 | reference | varchar(20) | public, unguessable (`ORD-` + 12 random chars); the buyer's capability to see the order |
 | event_id | bigint FK -> events | `ON DELETE RESTRICT` |
 | buyer_name, buyer_email | varchar | e-mail stored lowercase |
-| status | varchar(20) | `pending` / `paid` / `failed` / `expired` / `refunded`; written ONLY by `OrderStateMachine` |
+| payment_reference | varchar(40) | what the payment provider quotes in its webhook (`pay_` + 12 random chars); the webhook finds the order by it |
+| status | varchar(20) | `pending` / `paid` / `failed` / `expired` / `refund_pending` / `refunded`; written ONLY by `OrderStateMachine` |
 | currency | char(3) | tenant currency at purchase time |
 | subtotal_minor, fee_minor, total_minor | bigint | integer minor units |
 | fee_percent_bps, fee_fixed_minor | int | the fee settings used, kept for audit and refunds |
 | expires_at | timestamptz | end of the hold |
-| paid_at, failed_at, expired_at, refunded_at | timestamptz null | stamped by the matching transition |
+| paid_at, failed_at, expired_at, refund_pending_at, refunded_at | timestamptz null | stamped by the matching transition |
 | idempotency_key | varchar(100) null | the buyer's `Idempotency-Key` |
 | request_fingerprint | char(64) null | hash of the request body: a key reused with another body is refused |
 
 | index / constraint | why |
 |---|---|
 | UNIQUE (reference) | looking an order up by its reference |
+| UNIQUE (payment_reference) | the webhook looks the order up by it; two orders can never share one |
 | UNIQUE (idempotency_key) | a retried checkout can never create a second order, even when two retries race (NULLs do not collide) |
 | INDEX (event_id, status) | orders of an event by status: dashboard, reports and the "has orders" check |
 | INDEX (buyer_email) | orders of one buyer |
@@ -160,6 +162,8 @@ never recomputed from `ticket_types` or the tenant settings.
 | unit_price_minor | bigint | snapshot |
 | quantity | int | > 0 |
 | line_total_minor | bigint | = unit price x quantity |
+| unit_fee_minor | bigint | booking fee of ONE ticket: percent of the unit price (half-up) + fixed fee; 0 for a free ticket |
+| line_fee_minor | bigint | = unit_fee_minor x quantity; the order's `fee_minor` is the sum of its lines |
 
 | index / constraint | why |
 |---|---|
@@ -167,6 +171,7 @@ never recomputed from `ticket_types` or the tenant settings.
 | INDEX (ticket_type_id) | orders of a ticket type: audit of held counters, sales per tier |
 | UNIQUE (order_id, ticket_type_id) | one line per ticket type per order |
 | CHECK quantity > 0, line_total = unit_price x quantity | no empty or inconsistent lines |
+| CHECK unit_fee >= 0, line_fee = unit_fee x quantity | a line's fee always adds up |
 
 ### `webhook_events` (tenant database)
 
@@ -178,7 +183,7 @@ One row per payment notification we accepted, kept as an audit trail.
 | event_id | varchar(100) | the provider's own id for the notification |
 | type | varchar(40) | `payment.succeeded` / `payment.failed` |
 | order_id | bigint FK -> orders null | `ON DELETE SET NULL` |
-| outcome | varchar(40) | what we did: `paid`, `paid_late`, `failed`, `already_paid`, `amount_mismatch`, `late_payment_no_stock`, `unknown_order`, `ignored` |
+| outcome | varchar(40) | what we did: `paid`, `paid_late`, `failed`, `already_paid`, `amount_mismatch`, `late_payment_no_stock` (the order becomes `refund_pending`), `unknown_order`, `ignored` |
 | payload | jsonb | the verified body |
 
 | index / constraint | why |
@@ -196,8 +201,8 @@ One row per seat, created when an order becomes paid.
 | order_id, order_item_id, ticket_type_id, event_id | bigint FK | all `RESTRICT`; `event_id` is copied so check-in needs no join |
 | seq | int | 1..quantity within the order line |
 | code | varchar(32) | random, shown in the QR code |
-| status | varchar(16) | `valid` / `used` / `void` |
-| checked_in_at, checked_in_by | timestamptz, FK users null | set together with `status = used` |
+| status | varchar(16) | `valid` / `checked_in` / `void` |
+| checked_in_at, checked_in_by | timestamptz, FK users null | set together with `status = checked_in` |
 
 | index / constraint | why |
 |---|---|

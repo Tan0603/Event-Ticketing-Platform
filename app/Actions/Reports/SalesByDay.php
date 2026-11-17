@@ -40,18 +40,20 @@ class SalesByDay
                     SUM(gross_minor) AS gross_minor, SUM(fees_minor) AS fees_minor,
                     SUM(refunds) AS refunds, SUM(refunded_minor) AS refunded_minor
                FROM (
-                    SELECT (o.paid_at AT TIME ZONE ?)::date AS day, 1 AS orders_paid, COALESCE(q.qty, 0) AS tickets_sold,
-                           o.subtotal_minor AS revenue_minor, o.total_minor AS gross_minor, o.fee_minor AS fees_minor,
+                    SELECT (paid_at AT TIME ZONE ?)::date AS day, 1 AS orders_paid, 0 AS tickets_sold,
+                           subtotal_minor AS revenue_minor, total_minor AS gross_minor, fee_minor AS fees_minor,
                            0 AS refunds, 0 AS refunded_minor
-                      FROM orders o
-                      LEFT JOIN LATERAL (SELECT SUM(quantity) AS qty FROM order_items WHERE order_id = o.id) q ON true
+                      FROM orders WHERE paid_at >= ? AND paid_at < ?
+                    UNION ALL
+                    SELECT (o.paid_at AT TIME ZONE ?)::date, 0, oi.quantity, 0, 0, 0, 0, 0
+                      FROM orders o JOIN order_items oi ON oi.order_id = o.id
                      WHERE o.paid_at >= ? AND o.paid_at < ?
                     UNION ALL
                     SELECT (created_at AT TIME ZONE ?)::date, 0, 0, 0, 0, 0, 1, amount_minor
                       FROM refunds WHERE created_at >= ? AND created_at < ?
                ) activity
               GROUP BY day ORDER BY day',
-            [$tz, $lo, $hi, $tz, $lo, $hi],
+            [$tz, $lo, $hi, $tz, $lo, $hi, $tz, $lo, $hi],
         );
         $byDay = collect($rows)->keyBy('day');
 
