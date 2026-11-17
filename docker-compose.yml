@@ -7,6 +7,9 @@ x-php: &php
     DB_HOST: postgres
     REDIS_HOST: redis
     MAIL_HOST: mailpit
+    # php-fpm (www-data) and artisan (root) would fight over one log file; containers log to stderr instead.
+    LOG_CHANNEL: stderr
+    LOG_STACK: stderr
   volumes:
     - .:/var/www/html
     # vendor on a named volume: bind-mounting it from OneDrive/Windows is very slow

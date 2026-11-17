@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
+use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,7 +27,10 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::middleware('throttle:storefront')->group(function () {
         Route::get('/events', [StorefrontEventController::class, 'index']);
         Route::get('/events/{slug}', [StorefrontEventController::class, 'show']);
+        Route::get('/orders/{reference}', [CheckoutController::class, 'show']);
     });
+
+    Route::post('/events/{slug}/checkout', [CheckoutController::class, 'store'])->middleware('throttle:checkout');
 
     Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);

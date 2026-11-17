@@ -21,6 +21,9 @@ final class ApiErrors
     {
         $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => true);
 
+        // A refused request (sold out, bad state, wrong credentials) is not a server problem: keep the log clean.
+        $exceptions->dontReport([BusinessRuleException::class, InvalidCredentialsException::class]);
+
         $exceptions->render(fn (Throwable $e, Request $request): ?JsonResponse => self::render($e));
     }
 

@@ -116,3 +116,53 @@ The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never s
 
 The sales status (`on_sale` / `upcoming` / `ended` / `sold_out` / ...) is computed on read from the window, the
 counters and the event state.
+
+### `orders` (tenant database)
+
+An order snapshots everything it needs: names, prices, fee settings and totals are copied when it is created and
+never recomputed from `ticket_types` or the tenant settings.
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| reference | varchar(20) | public, unguessable (`ORD-` + 12 random chars); the buyer's capability to see the order |
+| event_id | bigint FK -> events | `ON DELETE RESTRICT` |
+| buyer_name, buyer_email | varchar | e-mail stored lowercase |
+| status | varchar(20) | `pending` / `paid` / `failed` / `expired` / `refunded`; written ONLY by `OrderStateMachine` |
+| currency | char(3) | tenant currency at purchase time |
+| subtotal_minor, fee_minor, total_minor | bigint | integer minor units |
+| fee_percent_bps, fee_fixed_minor | int | the fee settings used, kept for audit and refunds |
+| expires_at | timestamptz | end of the hold |
+| paid_at, failed_at, expired_at, refunded_at | timestamptz null | stamped by the matching transition |
+| idempotency_key | varchar(100) null | the buyer's `Idempotency-Key` |
+| request_fingerprint | char(64) null | hash of the request body: a key reused with another body is refused |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (reference) | looking an order up by its reference |
+| UNIQUE (idempotency_key) | a retried checkout can never create a second order, even when two retries race (NULLs do not collide) |
+| INDEX (event_id, status) | orders of an event by status: dashboard, reports and the "has orders" check |
+| INDEX (buyer_email) | orders of one buyer |
+| PARTIAL INDEX (expires_at) WHERE status = 'pending' | the expiry job only looks at pending orders: a tiny, always-hot index |
+| CHECK status IN (...) | a status outside the enum can never be stored |
+| CHECK total = subtotal + fee, no negatives | the money of an order always adds up |
+| CHECK buyer_email = lower(buyer_email) | one e-mail, one spelling |
+
+### `order_items` (tenant database)
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| order_id | bigint FK -> orders | `ON DELETE CASCADE` |
+| ticket_type_id | bigint FK -> ticket_types | `ON DELETE RESTRICT`: a tier that was ever bought cannot be deleted |
+| ticket_type_name | varchar | snapshot |
+| unit_price_minor | bigint | snapshot |
+| quantity | int | > 0 |
+| line_total_minor | bigint | = unit price x quantity |
+
+| index / constraint | why |
+|---|---|
+| INDEX (order_id) | items of an order (every order read) |
+| INDEX (ticket_type_id) | orders of a ticket type: audit of held counters, sales per tier |
+| UNIQUE (order_id, ticket_type_id) | one line per ticket type per order |
+| CHECK quantity > 0, line_total = unit_price x quantity | no empty or inconsistent lines |
