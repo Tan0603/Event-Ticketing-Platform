@@ -43,6 +43,9 @@ return [
     'ticket_link_days' => (int) env('TICKETING_TICKET_LINK_DAYS', 30),
 
     'reminder_hours_before' => 24,
+
+    // Pending orders the expiry task releases per batch (it loops until none are left).
+    'expiry_batch_size' => (int) env('TICKETING_EXPIRY_BATCH', 200),
     'max_per_order_default' => 10,
     'max_per_order_cap' => 100,
 
