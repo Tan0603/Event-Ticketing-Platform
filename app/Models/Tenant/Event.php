@@ -49,13 +49,7 @@ class Event extends Model
 
     public function timing(?CarbonInterface $now = null): EventTiming
     {
-        $now ??= now();
-
-        return match (true) {
-            $now->gte($this->ends_at) => EventTiming::Ended,
-            $now->gte($this->starts_at) => EventTiming::Ongoing,
-            default => EventTiming::Upcoming,
-        };
+        return EventTiming::resolve($now ?? now(), $this->starts_at, $this->ends_at);
     }
 
     /**

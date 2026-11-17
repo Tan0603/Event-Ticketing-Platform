@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
+use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -20,6 +21,12 @@ Route::get('/register/{tenantId}', [RegisterController::class, 'show'])
  */
 Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+    // Public shop: no login, cached, throttled per tenant + IP.
+    Route::middleware('throttle:storefront')->group(function () {
+        Route::get('/events', [StorefrontEventController::class, 'index']);
+        Route::get('/events/{slug}', [StorefrontEventController::class, 'show']);
+    });
 
     Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);

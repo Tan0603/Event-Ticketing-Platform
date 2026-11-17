@@ -5,6 +5,7 @@ namespace App\Actions\Events;
 use App\Enums\EventStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tenant\Event;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
 
 class CancelEvent
@@ -24,6 +25,9 @@ class CancelEvent
             $locked->status = EventStatus::Cancelled;
             $locked->cancelled_at = now();
             $locked->save();
+
+            // Public shop cache: anything visitors see may have changed.
+            StorefrontCache::flush();
 
             return $locked;
         });

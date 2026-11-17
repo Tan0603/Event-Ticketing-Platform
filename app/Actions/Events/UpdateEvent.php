@@ -5,6 +5,7 @@ namespace App\Actions\Events;
 use App\Enums\EventStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tenant\Event;
+use App\Support\StorefrontCache;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -45,6 +46,9 @@ class UpdateEvent
             } catch (UniqueConstraintViolationException) {
                 throw ValidationException::withMessages(['slug' => ['This slug is already used by another event.']]);
             }
+
+            // Public shop cache: anything visitors see may have changed.
+            StorefrontCache::flush();
 
             return $locked;
         });

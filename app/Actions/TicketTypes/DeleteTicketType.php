@@ -6,6 +6,7 @@ use App\Enums\EventStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Tenant\Event;
 use App\Models\Tenant\TicketType;
+use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
 
 class DeleteTicketType
@@ -34,6 +35,8 @@ class DeleteTicketType
 
                 throw new BusinessRuleException('ticket_type_has_sales', 'A ticket type with sold or reserved tickets cannot be deleted.');
             }
+
+            StorefrontCache::flush();
         });
     }
 }
