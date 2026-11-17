@@ -174,6 +174,19 @@ so a link cannot be replayed against another tenant. Mails are delivered by Hori
 starts it); open Mailpit at http://localhost:8026 to read them. A failed send is retried (10 s, 1 m, 5 m, 15 m),
 then recorded as `failed` on the notification row.
 
+## Scheduled tasks
+
+The `scheduler` container runs `schedule:work`. Each task only dispatches **one job per active tenant**
+(tenants that are `provisioning` or `failed` are skipped), so tenants run in parallel and one broken tenant
+cannot block the others. The per-tenant jobs are idempotent and run on the Horizon queue.
+
+| task | every | what it does |
+|---|---|---|
+| `expire-pending-orders` | minute | Pending orders past `expires_at` become `expired` and their held tickets go back to stock (`ReleaseOrder`, one short transaction per order, lock order event -> order -> ticket types). Orders paid in the meantime are skipped after re-checking under the lock. |
+| `queue-event-reminders` | 15 minutes | Paid orders of published events starting within `ticketing.reminder_hours_before` (24 h) get one reminder e-mail. The `order_notifications` UNIQUE `(order_id, type)` claim makes repeated runs harmless. |
+
+After a deploy run `php artisan horizon:terminate` so the workers pick up new code.
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
