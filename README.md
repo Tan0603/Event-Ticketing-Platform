@@ -35,6 +35,11 @@ docker compose exec app vendor/bin/pint        # code style
 docker compose exec app vendor/bin/phpstan analyse   # Larastan level 6
 ```
 
+Every test provisions a real tenant database. To keep that fast the suite builds one migrated template database
+(`tenanttpl_<hash of the tenant migrations>`, rebuilt automatically when a migration changes) and each tenant database
+is cloned from it with `CREATE DATABASE ... TEMPLATE` (`ticketing.tenant_template_database`; empty in production).
+The full suite (about 340 tests) runs in about two minutes. Run suites one at a time: they share one test database.
+
 ## Tenants
 
 ```bash
@@ -213,6 +218,15 @@ holds can lag by up to the TTL.
 - `GET /api/admin/dashboard`: orders by status, gross / fees / refunds / net, tickets sold / held / capacity / checked in, upcoming events, top 5 events by net revenue.
 - `GET /api/admin/reports/sales?from=YYYY-MM-DD&to=YYYY-MM-DD`: one row per day in the tenant timezone (default: last 30 days, at most 366). **A refunded order counts as a sale on the day it was paid and as a refund on the day it was refunded** (your decision 6), so a day can have negative net.
 - `GET /api/admin/events/{event}/report`: per ticket type capacity, sold, held, gross, refunded, net, checked in, awaiting, void, plus totals.
+
+## Demo data
+
+`php artisan tenant:provision demo-org "Demo Org" MYR Asia/Kuala_Lumpur admin@demo.test --password=password`, then
+`php artisan demo:seed demo-org --orders=60`. It creates 4 events (published, free + paid tiers, draft, cancelled), orders
+in every state, tickets, refunds and check-ins, and a door-staff login (`door@demo.test` / `password`). It runs through
+the real actions (`PlaceOrder`, `ProcessPaymentWebhook`, `RefundOrder`, `CheckInTicket`), in one transaction, so stock
+counters, tickets and refunds stay consistent; only order timestamps are moved back over two weeks so the reports have
+history. Running it twice does nothing the second time.
 
 ## Scheduled tasks
 
