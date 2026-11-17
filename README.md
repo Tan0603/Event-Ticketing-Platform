@@ -210,7 +210,9 @@ working). The decision is one statement, `UPDATE tickets SET status='used' ... W
 | event cancelled | 409 | `event_cancelled` |
 | ticket of another event than `event_id` | 409 | `wrong_event` |
 
-Codes are trimmed and upper-cased, so a hand-typed code works. Throttled per staff member
+Codes are trimmed and upper-cased, so a hand-typed code works.
+Proof under real concurrency: `php artisan stress:checkin demo-org <valid-code> door@demo.test password --requests=40`
+sends 40 simultaneous scans of one ticket and checks that exactly one is admitted (the rest answer `already_checked_in`). Throttled per staff member
 (`ticketing.rate_limits.checkin_per_minute`, 120).
 
 ## Orders and refunds (admin)
