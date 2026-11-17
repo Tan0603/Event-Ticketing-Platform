@@ -40,4 +40,10 @@ return [
 
     'reminder_hours_before' => 24,
     'max_per_order_default' => 10,
+    'max_per_order_cap' => 100,
+
+    'pagination' => [
+        'default_per_page' => 20,
+        'max_per_page' => 100,
+    ],
 ];
