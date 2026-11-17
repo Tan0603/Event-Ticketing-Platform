@@ -8,12 +8,15 @@ use App\Actions\Events\DeleteEvent;
 use App\Actions\Events\ListEvents;
 use App\Actions\Events\PublishEvent;
 use App\Actions\Events\UpdateEvent;
+use App\Actions\Orders\RefundEventOrders;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ListEventsRequest;
 use App\Http\Requests\Admin\StoreEventRequest;
 use App\Http\Requests\Admin\UpdateEventRequest;
 use App\Http\Resources\Admin\EventResource;
 use App\Models\Tenant\Event;
+use App\Models\Tenant\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -55,6 +58,16 @@ class EventController extends Controller
         $this->authorize('publish', $event);
 
         return new EventResource($publish->execute($event)->load('ticketTypes'));
+    }
+
+    /** Refund every paid order of a cancelled event: queued one job per order, so the answer is 202. */
+    public function refundOrders(Request $request, Event $event, RefundEventOrders $refundAll): JsonResponse
+    {
+        $this->authorize('refundOrders', $event);
+        /** @var User $admin */
+        $admin = $request->user();
+
+        return response()->json(['data' => ['queued' => $refundAll->execute($event, $admin->id)]], 202);
     }
 
     public function cancel(Request $request, Event $event, CancelEvent $cancel): EventResource

@@ -7,6 +7,7 @@ use App\Enums\NotificationType;
 use App\Jobs\Concerns\RunsInTenant;
 use App\Mail\EventReminderMail;
 use App\Mail\OrderConfirmationMail;
+use App\Mail\OrderRefundedMail;
 use App\Models\Tenant\Order;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -55,7 +56,7 @@ class SendOrderEmailJob implements ShouldQueue
                 return;
             }
 
-            $order = Order::query()->with(['items', 'event'])->findOrFail($this->orderId);
+            $order = Order::query()->with(['items', 'event', 'refund'])->findOrFail($this->orderId);
 
             Mail::to($order->buyer_email, $order->buyer_name)->send($this->mailable($order));
 
@@ -81,7 +82,8 @@ class SendOrderEmailJob implements ShouldQueue
         return match ($this->type) {
             NotificationType::Confirmation => new OrderConfirmationMail($order),
             NotificationType::Reminder => new EventReminderMail($order),
-            // The other types are added with the features that send them (refunds, cancellations).
+            NotificationType::Refund => new OrderRefundedMail($order),
+            // The remaining type is added with the feature that sends it.
             default => throw new \LogicException("No e-mail template for {$this->type->value}."),
         };
     }
