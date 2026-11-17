@@ -39,6 +39,9 @@ return [
         'webhook_per_minute' => (int) env('TICKETING_WEBHOOK_RATE_LIMIT', 300),
     ],
 
+    // How long the signed links in e-mails (online tickets, QR images) keep working.
+    'ticket_link_days' => (int) env('TICKETING_TICKET_LINK_DAYS', 30),
+
     'reminder_hours_before' => 24,
     'max_per_order_default' => 10,
     'max_per_order_cap' => 100,
