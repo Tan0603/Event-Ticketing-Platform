@@ -27,7 +27,8 @@ class UpdateEventRequest extends FormRequest
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'slug' => ['sometimes', 'required', 'string', 'max:120', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', Rule::unique('events', 'slug')->ignore($event->id)],
             'description' => ['sometimes', 'nullable', 'string', 'max:10000'],
-            'venue' => ['sometimes', 'required', 'string', 'max:255'],
+            'venue_name' => ['sometimes', 'required', 'string', 'max:255'],
+            'venue_address' => ['sometimes', 'nullable', 'string', 'max:500'],
             'starts_at' => ['sometimes', 'required', 'date'],
             'ends_at' => ['sometimes', 'required', 'date'],
         ];

@@ -35,7 +35,8 @@ class ListPublicEvents
                     'title' => $event->title,
                     'slug' => $event->slug,
                     'description' => $event->description,
-                    'venue' => $event->venue,
+                    'venue_name' => $event->venue_name,
+                    'venue_address' => $event->venue_address,
                     'starts_at' => $event->starts_at->toIso8601String(),
                     'ends_at' => $event->ends_at->toIso8601String(),
                     'from_price_minor' => ($price = $event->getAttribute('from_price_minor')) === null ? null : (int) $price,
@@ -72,7 +73,7 @@ class ListPublicEvents
             ->when($filters['q'] ?? null, function ($q, string $term) {
                 $like = '%'.addcslashes($term, '\\%_').'%';
 
-                return $q->where(fn ($w) => $w->where('title', 'ilike', $like)->orWhere('venue', 'ilike', $like));
+                return $q->where(fn ($w) => $w->where('title', 'ilike', $like)->orWhere('venue_name', 'ilike', $like));
             })
             ->when($filters['from'] ?? null, fn ($q, string $from) => $q->where('starts_at', '>=', TenantTime::parse($from)))
             ->when($filters['to'] ?? null, fn ($q, string $to) => $q->where('starts_at', '<=', TenantTime::parse($to)))

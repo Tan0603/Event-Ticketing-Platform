@@ -22,7 +22,8 @@ class StoreEventRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'slug' => ['nullable', 'string', 'max:120', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', Rule::unique('events', 'slug')],
             'description' => ['nullable', 'string', 'max:10000'],
-            'venue' => ['required', 'string', 'max:255'],
+            'venue_name' => ['required', 'string', 'max:255'],
+            'venue_address' => ['nullable', 'string', 'max:500'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
         ];
@@ -34,9 +35,10 @@ class StoreEventRequest extends FormRequest
             title: $this->validated('title'),
             slug: $this->validated('slug'),
             description: $this->validated('description'),
-            venue: $this->validated('venue'),
+            venueName: $this->validated('venue_name'),
             startsAt: TenantTime::parse($this->validated('starts_at')),
             endsAt: TenantTime::parse($this->validated('ends_at')),
+            venueAddress: $this->validated('venue_address'),
         );
     }
 }

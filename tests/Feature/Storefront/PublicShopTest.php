@@ -73,7 +73,7 @@ describe('listing', function () {
             foreach (range(1, 5) as $i) {
                 publishedEvent(['title' => "Event {$i}", 'starts_at' => "2027-02-0{$i} 10:00:00", 'ends_at' => "2027-02-0{$i} 14:00:00"]);
             }
-            publishedEvent(['title' => 'Jazz Night', 'venue' => 'Blue Room', 'starts_at' => '2027-03-01 10:00:00', 'ends_at' => '2027-03-01 14:00:00']);
+            publishedEvent(['title' => 'Jazz Night', 'venue_name' => 'Blue Room', 'starts_at' => '2027-03-01 10:00:00', 'ends_at' => '2027-03-01 14:00:00']);
         });
 
         $this->getJson('/api/events?per_page=4', $this->pub)->assertJsonCount(4, 'data')->assertJsonPath('meta.total', 6);

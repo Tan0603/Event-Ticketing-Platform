@@ -503,7 +503,7 @@
             "url": "{{base_url}}/admin/events",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue\": \"The Loft\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
