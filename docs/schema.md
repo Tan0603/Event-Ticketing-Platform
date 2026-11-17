@@ -222,3 +222,23 @@ The claim that guarantees each e-mail is sent once per order and type.
 | index / constraint | why |
 |---|---|
 | UNIQUE (order_id, type) | the claim: the first insert wins, every later attempt is a no-op |
+
+### `refunds` (tenant database)
+
+One row per refunded order, created in the same transaction that moves the order to `refunded`.
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| order_id | bigint FK -> orders | `RESTRICT` |
+| amount_minor | bigint | integer minor units; always the order total (full refunds only) |
+| currency | char(3) | copied from the order |
+| reason | varchar(500) null | free text from the admin; `Event cancelled` for bulk refunds |
+| refunded_by | bigint FK -> users null | `SET NULL` when the user is deleted |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (order_id) | an order can be refunded once, even if two admins click at the same moment or a job is retried; also serves the FK and the order -> refund lookup |
+| INDEX (created_at) | reports group refunds by the day they happened |
+| INDEX (refunded_by) | serves the FK |
+| CHECK amount_minor >= 0 | no negative refunds |
