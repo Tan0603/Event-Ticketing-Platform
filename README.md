@@ -94,6 +94,40 @@ counters for 15 seconds, the list for 60 seconds. Sales status is derived at rea
 the clock, so a tier flips to `on_sale` on time. Any admin change to an event or ticket type bumps a per-tenant
 version, which makes every cached page unreachable at once. The cache is display only: checkout decides stock in PostgreSQL.
 
+## Checkout
+
+`POST /api/events/{slug}/checkout` (public, `X-Tenant-ID`, optional `Idempotency-Key` header)
+
+```bash
+curl -X POST http://localhost:8088/api/events/sunset-fest/checkout -H "X-Tenant-ID: sunsetfest" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: attempt-0001" \
+  -d '{"buyer_name":"Aisha","buyer_email":"aisha@example.com","items":[{"ticket_type_id":1,"quantity":2}]}'
+# 201 -> {"data":{"reference":"ORD-...","status":"pending","total_minor":11050,"expires_at":"...", ...}}
+```
+
+The tickets are held for `TICKETING_HOLD_MINUTES` (10). Lines are held all-or-nothing inside one transaction, with
+one atomic conditional `UPDATE` per ticket type (PostgreSQL decides if the stock is there; the cache is never used).
+A repeated request with the same `Idempotency-Key` returns the same order (`200`, `Idempotent-Replayed: true`) and
+holds nothing twice; the same key with a different body is `422 idempotency_key_reused`.
+`GET /api/orders/{reference}` shows an order to whoever holds its reference.
+
+Errors: `404` unknown/unpublished event, `409` `insufficient_stock` / `sales_not_started` / `sales_ended` /
+`event_not_on_sale`, `422` validation (also a ticket type of another event, or above max per order), `429` throttled.
+
+**Fees:** `fee = round-half-up(subtotal x fee_bps / 10000) + fee_fixed`, all integer maths in `App\Domain\Money\FeeCalculator`;
+a free order (subtotal 0) has no fee. Example: 2 x 5000 -> subtotal 10000, fee 500 + 50, total 10550.
+
+### Proving it does not oversell
+
+```bash
+docker compose exec app php artisan stress:checkout {tenant} {ticket_type_id} --requests=200 --concurrency=50
+```
+
+It sends real concurrent HTTP checkouts at one ticket type (default via the `nginx` container), prints the outcome
+counts and then audits the database: `sold + held <= quantity`, `held` grew by exactly the orders created, and
+`held` equals the tickets in pending orders. Example with a 50-ticket tier: 50 x `201`, 150 x `409 insufficient_stock`, all
+invariants PASS. (Absolute req/s depends on the machine; Docker Desktop on Windows is the slow case.)
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
@@ -120,3 +154,8 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Quantity can shrink only down to sold + held** (checked atomically, backed by a CHECK constraint).
 - **Cancelled events disappear from the public shop** (404, same as a draft). Their buyers are handled through orders and refunds, not the public page.
 - **Availability on the public page may lag by up to 15 seconds** (`TICKETING_CACHE_AVAILABILITY_TTL`). A buyer who sees tickets left can still be told "sold out" at checkout; PostgreSQL is the source of truth.
+
+- **A free order carries no fee** (the fixed fee applies only when the subtotal is above zero).
+- **Per-IP checkout limit is high (300/min) and the per-e-mail limit is strict (10/min)**, so offices behind one NAT can still buy and the stress test reaches the locking path.
+- **Checkout of a cancelled/draft event answers 404**, an event that has ended answers `409 event_not_on_sale`.
+- **Containers log to stderr** (`LOG_CHANNEL=stderr`): php-fpm and artisan run as different users and cannot share one log file.
