@@ -89,13 +89,14 @@ class PlaceOrder
         ksort($items); // ascending ticket type id: the global lock order
 
         $lines = [];
-        $subtotal = 0;
+        $priced = [];
         foreach ($items as $ticketTypeId => $quantity) {
             $held = TicketStock::hold($ticketTypeId, $event->id, $quantity, $now)
                 ?? $this->explainFailure($ticketTypeId, $event->id, $quantity, $now);
 
+            $unitFee = FeeCalculator::ticketFee($held['price_minor'], $order->fee_percent_bps, $order->fee_fixed_minor);
+            $priced[] = [$held['price_minor'], $quantity];
             $lineTotal = $held['price_minor'] * $quantity;
-            $subtotal += $lineTotal;
             $lines[] = [
                 'order_id' => $order->id,
                 'ticket_type_id' => $held['id'],
@@ -103,6 +104,8 @@ class PlaceOrder
                 'unit_price_minor' => $held['price_minor'],
                 'quantity' => $quantity,
                 'line_total_minor' => $lineTotal,
+                'unit_fee_minor' => $unitFee,
+                'line_fee_minor' => $unitFee * $quantity,
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
@@ -110,7 +113,7 @@ class PlaceOrder
 
         OrderItem::query()->insert($lines);
 
-        $totals = FeeCalculator::totals($subtotal, $order->fee_percent_bps, $order->fee_fixed_minor);
+        $totals = FeeCalculator::totals($priced, $order->fee_percent_bps, $order->fee_fixed_minor);
         $order->forceFill([
             'subtotal_minor' => $totals->subtotalMinor,
             'fee_minor' => $totals->feeMinor,

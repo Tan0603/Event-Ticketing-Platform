@@ -231,7 +231,7 @@ describe('admin order list and detail', function () {
             ->assertJsonPath('data.items.0.quantity', 2)
             ->assertJsonCount(2, 'data.tickets')
             ->assertJsonPath('data.refund.reason', 'Test')
-            ->assertJsonPath('data.refund.amount_minor', 10550) // 2 x 5000 + 5% (500) + 50 fixed
+            ->assertJsonPath('data.refund.amount_minor', 10600) // 2 x (5000 + 5% + 50 fixed)
             ->assertJsonPath('data.refunded_at', fn ($at) => $at !== null);
     });
 
