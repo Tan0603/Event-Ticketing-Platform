@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 /**
@@ -36,6 +37,7 @@ use LogicException;
  * @property string|null $idempotency_key
  * @property string|null $request_fingerprint
  * @property-read Event $event
+ * @property-read Refund|null $refund
  * @property-read Collection<int, OrderItem> $items
  */
 class Order extends Model
@@ -82,6 +84,12 @@ class Order extends Model
     public function tickets(): HasMany
     {
         return $this->hasMany(Ticket::class)->orderBy('id');
+    }
+
+    /** @return HasOne<Refund, $this> */
+    public function refund(): HasOne
+    {
+        return $this->hasOne(Refund::class);
     }
 
     /** @return HasMany<OrderItem, $this> */
