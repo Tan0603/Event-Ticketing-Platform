@@ -38,7 +38,7 @@ Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event
 | shop | `GET /events`, `GET /events/{slug}`, `POST /events/{slug}/checkout`, `GET /orders/{reference}` | public |
 | payments | `POST /webhooks/payments/{tenant}` (HMAC signed) | payment provider |
 | e-mail links | `GET /public/{tenant}/orders/{reference}/tickets`, `GET /public/{tenant}/tickets/{code}/qr` (signed URLs) | buyers |
-| door | `POST /check-in` | door staff, admin |
+| door | `POST /admin/events/{event}/check-ins`, `GET /admin/events/{event}/check-ins/stats` | door staff, admin |
 | admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/reports/events/{id}`, `/admin/events/{id}/attendees` | admin |
 
 `GET /api/admin/settings` shows the tenant's webhook URL and secret (the secret is also printed once at `tenant:provision`).
@@ -302,7 +302,10 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Cancelled events disappear from the public shop** (404, same as a draft). Their buyers are handled through orders and refunds, not the public page.
 - **Availability on the public page may lag by up to 15 seconds** (`TICKETING_CACHE_AVAILABILITY_TTL`). A buyer who sees tickets left can still be told "sold out" at checkout; PostgreSQL is the source of truth.
 
-- **A free order carries no fee** (the fixed fee applies only when the subtotal is above zero).
+- **A free ticket carries no fee** (the percentage and fixed fee are charged per paid ticket; a free order totals 0).
+- **A `refund_pending` order is not counted as a sale** in reports (money was taken but no tickets exist); it counts as a refund once refunded.
+- **Route paths differ from the PDF's suggestions** (`/events/{slug}/checkout`, `/public/{tenant}/...` signed URLs, per-event check-in under `/admin`); the PDF allows other paths. Behaviour and status codes follow the PDF.
+- **Architecture and reasoning** are in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Per-IP checkout limit is high (300/min) and the per-e-mail limit is strict (10/min)**, so offices behind one NAT can still buy and the stress test reaches the locking path.
 - **Checkout of a cancelled/draft event answers 404**, an event that has ended answers `409 event_not_on_sale`.
 - **Containers log to stderr** (`LOG_CHANNEL=stderr`): php-fpm and artisan run as different users and cannot share one log file.
