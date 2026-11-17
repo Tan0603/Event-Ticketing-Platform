@@ -5,19 +5,58 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8088/api" },
-    { "key": "tenant", "value": "demo-org" },
-    { "key": "email", "value": "admin@demo.test" },
-    { "key": "password", "value": "password" },
-    { "key": "token", "value": "" },
-    { "key": "webhook_secret", "value": "" },
-    { "key": "event_id", "value": "1" },
-    { "key": "ticket_type_id", "value": "1" },
-    { "key": "slug", "value": "summer-music-fest" },
-    { "key": "reference", "value": "" },
-    { "key": "payment_reference", "value": "" },
-    { "key": "total_minor", "value": "0" },
-    { "key": "ticket_code", "value": "" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:8088/api"
+    },
+    {
+      "key": "tenant",
+      "value": "demo-org"
+    },
+    {
+      "key": "email",
+      "value": "admin@demo.test"
+    },
+    {
+      "key": "password",
+      "value": "password"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "webhook_secret",
+      "value": ""
+    },
+    {
+      "key": "event_id",
+      "value": "1"
+    },
+    {
+      "key": "ticket_type_id",
+      "value": "1"
+    },
+    {
+      "key": "slug",
+      "value": "summer-music-fest"
+    },
+    {
+      "key": "reference",
+      "value": ""
+    },
+    {
+      "key": "payment_reference",
+      "value": ""
+    },
+    {
+      "key": "total_minor",
+      "value": "0"
+    },
+    {
+      "key": "ticket_code",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -27,14 +66,36 @@
           "name": "Register a tenant",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Accept", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/register",
-            "body": { "mode": "raw", "raw": "{\n  \"tenant_id\": \"my-events\",\n  \"name\": \"My Events\",\n  \"currency\": \"MYR\",\n  \"timezone\": \"Asia/Kuala_Lumpur\",\n  \"admin_name\": \"Admin\",\n  \"admin_email\": \"admin@my-events.test\",\n  \"password\": \"a-long-password-1\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"my-events\",\n  \"name\": \"My Events\",\n  \"currency\": \"MYR\",\n  \"timezone\": \"Asia/Kuala_Lumpur\",\n  \"admin_name\": \"Admin\",\n  \"admin_email\": \"admin@my-events.test\",\n  \"password\": \"a-long-password-1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Registration status",
-          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/register/my-events" }
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/register/my-events"
+          }
         }
       ]
     },
@@ -43,36 +104,167 @@
       "item": [
         {
           "name": "Login",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const json = pm.response.json();", "const token = json.token || (json.data && json.data.token);", "if (token) { pm.collectionVariables.set('token', token); }"] } }],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json.token || (json.data && json.data.token);",
+                  "if (token) { pm.collectionVariables.set('token', token); }"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }],
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/auth/login",
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Logout",
-          "request": { "method": "POST", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] }, "url": "{{base_url}}/auth/logout" }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "url": "{{base_url}}/auth/logout"
+          }
         }
       ]
     },
     {
       "name": "Public shop (no login)",
       "item": [
-        { "name": "List events", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/events?per_page=20" } },
-        { "name": "Show event", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/events/{{slug}}" } },
         {
-          "name": "Checkout",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const json = pm.response.json();", "if (json.data && json.data.reference) { pm.collectionVariables.set('reference', json.data.reference); pm.collectionVariables.set('payment_reference', json.data.payment_reference); pm.collectionVariables.set('total_minor', json.data.total_minor); }"] } }],
+          "name": "List events",
           "request": {
-            "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }, { "key": "Idempotency-Key", "value": "{{$guid}}" }],
-            "url": "{{base_url}}/events/{{slug}}/checkout",
-            "body": { "mode": "raw", "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }]\n}", "options": { "raw": { "language": "json" } } }
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/events?per_page=20"
           }
         },
-        { "name": "Order status", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/orders/{{reference}}" } }
+        {
+          "name": "Show event",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/events/{{slug}}"
+          }
+        },
+        {
+          "name": "Checkout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.reference) { pm.collectionVariables.set('reference', json.data.reference); pm.collectionVariables.set('payment_reference', json.data.payment_reference); pm.collectionVariables.set('total_minor', json.data.total_minor); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/events/{{slug}}/checkout",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Order status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/orders/{{reference}}"
+          }
+        }
       ]
     },
     {
@@ -80,12 +272,36 @@
       "item": [
         {
           "name": "Payment succeeded",
-          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const body = pm.request.body.raw;", "const sig = CryptoJS.HmacSHA256(body, pm.collectionVariables.get('webhook_secret')).toString();", "pm.request.headers.upsert({ key: 'X-Signature', value: sig });"] } }],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.request.body.raw;",
+                  "const sig = CryptoJS.HmacSHA256(body, pm.collectionVariables.get('webhook_secret')).toString();",
+                  "pm.request.headers.upsert({ key: 'X-Signature', value: sig });"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/webhooks/payments/{{tenant}}",
-            "body": { "mode": "raw", "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}"
+            }
           }
         }
       ]
@@ -97,53 +313,340 @@
           "name": "Scan a ticket",
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }],
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] },
-            "url": "{{base_url}}/check-in",
-            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{ticket_code}}\",\n  \"event_id\": {{event_id}}\n}", "options": { "raw": { "language": "json" } } }
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/check-ins",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{ticket_code}}\",\n  \"gate_name\": \"Gate A\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Check-in stats for an event",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/check-ins/stats",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            }
           }
         }
       ]
     },
     {
       "name": "Admin",
-      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] },
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{token}}"
+          }
+        ]
+      },
       "item": [
-        { "name": "Settings (webhook url + secret)", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/settings" } },
-        { "name": "Dashboard", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/dashboard" } },
-        { "name": "Sales by day", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/reports/sales?from=2026-11-01&to=2026-11-30" } },
-        { "name": "Event report", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/events/{{event_id}}/report" } },
-        { "name": "List events", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/events?status=published&sort=starts_at&direction=asc" } },
+        {
+          "name": "Settings (webhook url + secret)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/settings"
+          }
+        },
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/dashboard"
+          }
+        },
+        {
+          "name": "Sales by day",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/reports/sales?from=2026-11-01&to=2026-11-30"
+          }
+        },
+        {
+          "name": "Attendees of an event",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/attendees?status=valid&per_page=25"
+          }
+        },
+        {
+          "name": "Event report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/report"
+          }
+        },
+        {
+          "name": "List events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events?status=published&sort=starts_at&direction=asc"
+          }
+        },
         {
           "name": "Create event",
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }],
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/admin/events",
-            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue\": \"The Loft\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue\": \"The Loft\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Add ticket type",
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }],
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"General\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"General\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
-        { "name": "Publish event", "request": { "method": "POST", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/events/{{event_id}}/publish" } },
-        { "name": "Cancel event", "request": { "method": "POST", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/events/{{event_id}}/cancel" } },
-        { "name": "Refund every order of a cancelled event", "request": { "method": "POST", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/events/{{event_id}}/refund-orders" } },
-        { "name": "List orders", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/orders?status=paid&per_page=20" } },
-        { "name": "Show order", "request": { "method": "GET", "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }], "url": "{{base_url}}/admin/orders/{{reference}}" } },
+        {
+          "name": "Publish event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/publish"
+          }
+        },
+        {
+          "name": "Cancel event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/cancel"
+          }
+        },
+        {
+          "name": "Refund every order of a cancelled event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/refund-orders"
+          }
+        },
+        {
+          "name": "List orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/orders?status=paid&per_page=20"
+          }
+        },
+        {
+          "name": "Show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/orders/{{reference}}"
+          }
+        },
         {
           "name": "Refund order",
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-Tenant-ID", "value": "{{tenant}}" }, { "key": "Accept", "value": "application/json" }],
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/admin/orders/{{reference}}/refund",
-            "body": { "mode": "raw", "raw": "{ \"reason\": \"Buyer asked\" }", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"reason\": \"Buyer asked\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
