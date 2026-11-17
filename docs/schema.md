@@ -166,3 +166,21 @@ never recomputed from `ticket_types` or the tenant settings.
 | INDEX (ticket_type_id) | orders of a ticket type: audit of held counters, sales per tier |
 | UNIQUE (order_id, ticket_type_id) | one line per ticket type per order |
 | CHECK quantity > 0, line_total = unit_price x quantity | no empty or inconsistent lines |
+
+### `webhook_events` (tenant database)
+
+One row per payment notification we accepted, kept as an audit trail.
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| event_id | varchar(100) | the provider's own id for the notification |
+| type | varchar(40) | `payment.succeeded` / `payment.failed` |
+| order_id | bigint FK -> orders null | `ON DELETE SET NULL` |
+| outcome | varchar(40) | what we did: `paid`, `paid_late`, `failed`, `already_paid`, `amount_mismatch`, `late_payment_no_stock`, `unknown_order`, `ignored` |
+| payload | jsonb | the verified body |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (event_id) | exactly-once: the row is inserted first, in the same transaction as the effect, so a retry or a simultaneous duplicate finds it and does nothing |
+| INDEX (order_id) | everything the provider told us about one order |

@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureTokenBelongsToTenant;
 use App\Http\Middleware\ForceJsonResponse;
 use App\Http\Middleware\IdentifyTenantByHeader;
 use App\Http\Middleware\IdentifyTenantByPath;
+use App\Http\Middleware\VerifyWebhookSignature;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.path' => IdentifyTenantByPath::class,
             'tenant.active' => EnsureTenantIsActive::class,
             'tenant.token' => EnsureTokenBelongsToTenant::class,
+            'webhook.signature' => VerifyWebhookSignature::class,
         ]);
 
         // Correctness, not style: tenancy must be initialized BEFORE auth:sanctum, otherwise the

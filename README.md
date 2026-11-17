@@ -128,6 +128,35 @@ counts and then audits the database: `sold + held <= quantity`, `held` grew by e
 `held` equals the tickets in pending orders. Example with a 50-ticket tier: 50 x `201`, 150 x `409 insufficient_stock`, all
 invariants PASS. (Absolute req/s depends on the machine; Docker Desktop on Windows is the slow case.)
 
+## Payments (webhook)
+
+`POST /api/webhooks/{tenant}/payments` is called by the payment provider. It cannot send our header, so the tenant is
+in the path, and the request is authenticated with `X-Signature` = hex HMAC-SHA256 of the **raw body**, keyed with the
+webhook secret of the tenant **in the URL** (shown once by `tenant:provision`), compared in constant time, before the
+body is read.
+
+```json
+{"id":"evt_123","type":"payment.succeeded","data":{"order_reference":"ORD-...","amount_minor":10550,"currency":"MYR"}}
+```
+
+| result | meaning |
+|---|---|
+| `200 {"status":"paid"}` | pending order paid, the hold became a sale |
+| `200 {"status":"duplicate"}` | this event id was already processed (retry-safe, exactly once) |
+| `200 {"status":"failed"}` | pending order failed, tickets released |
+| `200 {"status":"paid_late"}` / `late_payment_no_stock` | the hold had already expired: honoured if stock is left, otherwise recorded for a refund |
+| `422 amount_mismatch` | amount or currency differs from the order total: the order is NOT paid |
+| `401 invalid_signature` | missing or wrong signature |
+
+To play the provider locally:
+
+```bash
+docker compose exec app php artisan payments:simulate {tenant} {order_reference} succeeded   # or failed
+# --event-id=evt_1 (reuse to see duplicate handling)   --amount=1 (see the mismatch guard)
+```
+
+After pulling new code: `php artisan migrate` (central) and `php artisan tenants:migrate` (every tenant database).
+
 ## Assumptions
 
 - **A failed tenant id is not reusable through sign-up.** `POST /api/register` with a `failed` id returns 422,
@@ -159,3 +188,9 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Per-IP checkout limit is high (300/min) and the per-e-mail limit is strict (10/min)**, so offices behind one NAT can still buy and the stress test reaches the locking path.
 - **Checkout of a cancelled/draft event answers 404**, an event that has ended answers `409 event_not_on_sale`.
 - **Containers log to stderr** (`LOG_CHANNEL=stderr`): php-fpm and artisan run as different users and cannot share one log file.
+
+- **A payment after `expires_at` but before the expiry job ran is a normal payment** (the order is still pending).
+- **A payment after the job released the hold** is honoured only if the tickets are still free; otherwise the order stays expired and the notification is recorded as `late_payment_no_stock` for a refund.
+- **An amount mismatch is answered 422 and never marks the order paid.** The event id is recorded, so the provider must send a corrected notification under a new id.
+- **An unknown order reference is answered 200** (`unknown_order`) so the provider does not retry forever.
+- **A free order (total 0) is paid immediately at checkout.**

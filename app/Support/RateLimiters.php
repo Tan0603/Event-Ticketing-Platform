@@ -40,6 +40,11 @@ final class RateLimiters
             self::limit('checkout_per_minute_ip', 60)->by(TenantKey::for('checkout', 'ip', (string) $request->ip())),
         ]);
 
+        // The provider is one IP (or a few); the limit is generous, but it stops a flood of forged signatures
+        // from burning CPU on HMAC checks.
+        RateLimiter::for('webhook', fn (Request $request): Limit => self::limit('webhook_per_minute', 60)
+            ->by(TenantKey::for('webhook', (string) $request->ip())));
+
         RateLimiter::for('register-status', fn (Request $request): Limit => self::limit('register_status_per_minute', 60)
             ->by(TenantKey::central('register-status', 'ip', (string) $request->ip())));
     }
