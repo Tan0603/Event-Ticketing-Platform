@@ -4,13 +4,14 @@ namespace App\Jobs;
 
 use App\Enums\NotificationStatus;
 use App\Enums\NotificationType;
+use App\Jobs\Concerns\RunsInTenant;
+use App\Mail\EventReminderMail;
 use App\Mail\OrderConfirmationMail;
-use App\Models\Central\Tenant;
 use App\Models\Tenant\Order;
-use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Mail\Mailable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,7 @@ use Throwable;
  */
 class SendOrderEmailJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, RunsInTenant, SerializesModels;
 
     public int $tries = 5;
 
@@ -75,24 +76,13 @@ class SendOrderEmailJob implements ShouldQueue
         });
     }
 
-    private function mailable(Order $order): OrderConfirmationMail
+    private function mailable(Order $order): Mailable
     {
         return match ($this->type) {
             NotificationType::Confirmation => new OrderConfirmationMail($order),
-            // The other types are added with the features that send them (reminders, refunds, cancellations).
+            NotificationType::Reminder => new EventReminderMail($order),
+            // The other types are added with the features that send them (refunds, cancellations).
             default => throw new \LogicException("No e-mail template for {$this->type->value}."),
         };
-    }
-
-    /** @param Closure(): void $callback */
-    private function inTenant(Closure $callback): void
-    {
-        if (tenancy()->initialized && tenant('id') === $this->tenantId) {
-            $callback();
-
-            return;
-        }
-
-        Tenant::query()->findOrFail($this->tenantId)->run($callback);
     }
 }
