@@ -29,6 +29,10 @@ final class RateLimiters
         RateLimiter::for('login', fn (Request $request): Limit => self::limit('login_per_minute', 60)
             ->by(TenantKey::for('login', strtolower((string) $request->input('email')), (string) $request->ip())));
 
+        // Public browsing: per tenant + IP, so one tenant's busy shop never throttles another's.
+        RateLimiter::for('storefront', fn (Request $request): Limit => self::limit('storefront_per_minute', 60)
+            ->by(TenantKey::for('storefront', (string) $request->ip())));
+
         RateLimiter::for('register-status', fn (Request $request): Limit => self::limit('register_status_per_minute', 60)
             ->by(TenantKey::central('register-status', 'ip', (string) $request->ip())));
     }

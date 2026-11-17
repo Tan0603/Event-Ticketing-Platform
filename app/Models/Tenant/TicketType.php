@@ -2,7 +2,6 @@
 
 namespace App\Models\Tenant;
 
-use App\Enums\EventStatus;
 use App\Enums\SalesStatus;
 use Carbon\CarbonInterface;
 use Database\Factories\TicketTypeFactory;
@@ -74,16 +73,13 @@ class TicketType extends Model
 
     public function salesStatus(?CarbonInterface $now = null): SalesStatus
     {
-        $now ??= now();
-
-        return match (true) {
-            $this->event->status === EventStatus::Cancelled => SalesStatus::Cancelled,
-            $this->event->status === EventStatus::Draft => SalesStatus::NotPublished,
-            $this->sales_start_at !== null && $now->lt($this->sales_start_at) => SalesStatus::Upcoming,
-            $now->gte($this->effectiveSalesEnd()) => SalesStatus::Ended,
-            $this->available() === 0 => SalesStatus::SoldOut,
-            default => SalesStatus::OnSale,
-        };
+        return SalesStatus::resolve(
+            $this->event->status,
+            $this->sales_start_at,
+            $this->effectiveSalesEnd(),
+            $this->available(),
+            $now ?? now(),
+        );
     }
 
     protected static function newFactory(): TicketTypeFactory
