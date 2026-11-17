@@ -3,7 +3,6 @@ x-php: &php
     context: ./docker/php
   image: ticketing-php:local
   working_dir: /var/www/html
-  env_file: .env
   environment:
     DB_HOST: postgres
     REDIS_HOST: redis
