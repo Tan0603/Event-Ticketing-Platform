@@ -75,6 +75,7 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
             Route::get('settings', [SettingsController::class, 'show']);
             Route::get('dashboard', [ReportController::class, 'dashboard']);
             Route::get('reports/sales', [ReportController::class, 'sales']);
+            Route::get('reports/events/{event}', [ReportController::class, 'event']);
             Route::get('events/{event}/report', [ReportController::class, 'event']);
 
             Route::get('orders', [OrderController::class, 'index']);

@@ -13,4 +13,4 @@ Schedule::call(new DispatchForActiveTenants(ExpirePendingOrdersJob::class))
     ->name('expire-pending-orders')->everyMinute()->withoutOverlapping(5)->onOneServer();
 
 Schedule::call(new DispatchForActiveTenants(QueueEventRemindersJob::class))
-    ->name('queue-event-reminders')->everyFifteenMinutes()->withoutOverlapping(10)->onOneServer();
+    ->name('queue-event-reminders')->hourly()->withoutOverlapping(30)->onOneServer();
