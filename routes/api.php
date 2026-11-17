@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
 use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
+use App\Http\Controllers\Webhook\PaymentWebhookController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -20,6 +21,13 @@ Route::get('/register/{tenantId}', [RegisterController::class, 'show'])
 /*
  * Tenant routes: X-Tenant-ID header, tenant must be active. Order matters: tenancy first, then auth.
  */
+/*
+ * Payment provider webhook: it cannot send our header, so the tenant is the {tenant} path segment, and the
+ * signature is checked with THAT tenant's secret before the body is read.
+ */
+Route::post('/webhooks/{tenant}/payments', [PaymentWebhookController::class, 'handle'])
+    ->middleware(['tenant.path', 'tenant.active', 'throttle:webhook', 'webhook.signature']);
+
 Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
