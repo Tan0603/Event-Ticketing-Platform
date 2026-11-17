@@ -152,7 +152,7 @@ describe('refunding an order', function () {
     it('refuses, and changes nothing, when a ticket was already used at the door', function () {
         $reference = ($this->sell)(3);
         $code = $this->tenant->run(fn () => Ticket::query()->orderBy('id')->value('code'));
-        $this->postJson('/api/check-in', ['code' => $code], $this->door)->assertOk();
+        $this->postJson("/api/admin/events/{$this->event->id}/check-ins", ['code' => $code], $this->door)->assertOk();
 
         ($this->refund)($reference)->assertStatus(409)->assertJsonPath('error', 'tickets_already_used');
 
@@ -171,7 +171,7 @@ describe('refunding an order', function () {
         $code = $this->tenant->run(fn () => Ticket::query()->value('code'));
         ($this->refund)($reference)->assertOk();
 
-        $this->postJson('/api/check-in', ['code' => $code], $this->door)->assertStatus(409)->assertJsonPath('error', 'ticket_void');
+        $this->postJson("/api/admin/events/{$this->event->id}/check-ins", ['code' => $code], $this->door)->assertStatus(409)->assertJsonPath('error', 'ticket_void');
     });
 
     it('refunds a free order for zero', function () {

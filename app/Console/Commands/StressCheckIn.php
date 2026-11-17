@@ -37,8 +37,8 @@ class StressCheckIn extends Command
         }
 
         $code = strtoupper((string) $this->argument('code'));
-        $status = $tenant->run(fn () => Ticket::query()->where('code', $code)->value('status'));
-        if ($status !== TicketStatus::Valid) {
+        $ticket = $tenant->run(fn () => Ticket::query()->where('code', $code)->first(['event_id', 'status']));
+        if ($ticket === null || $ticket->status !== TicketStatus::Valid) {
             $this->error('That ticket does not exist or is not valid any more (nothing to race for).');
 
             return self::INVALID;
@@ -46,8 +46,9 @@ class StressCheckIn extends Command
 
         $token = $tenant->run(fn () => $login->execute((string) $this->argument('email'), (string) $this->argument('password'))->plainTextToken);
 
+        $eventId = $ticket->event_id;
         $requests = max(2, (int) $this->option('requests'));
-        $url = rtrim((string) $this->option('url'), '/').'/api/check-in';
+        $url = rtrim((string) $this->option('url'), '/')."/api/admin/events/{$eventId}/check-ins";
         $this->info("Scanning {$code} {$requests} times at once ...");
 
         /** @var array<string, Response|\Throwable> $responses */

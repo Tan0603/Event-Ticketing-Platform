@@ -39,7 +39,7 @@ class EventReport
 
         $attendance = collect(DB::select(
             "SELECT ticket_type_id,
-                    COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
+                    COUNT(*) FILTER (WHERE status = 'checked_in') AS checked_in,
                     COUNT(*) FILTER (WHERE status = 'valid') AS awaiting,
                     COUNT(*) FILTER (WHERE status = 'void') AS void
                FROM tickets WHERE event_id = ? GROUP BY ticket_type_id",

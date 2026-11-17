@@ -149,9 +149,10 @@ class DemoSeeder extends Seeder
         $checkIn = app(CheckInTicket::class);
 
         // The meetup is soon: some of its buyers already walked in.
-        Ticket::query()->whereHas('event', fn ($q) => $q->where('slug', 'laravel-meetup'))->where('status', 'valid')
+        $meetup = Event::query()->where('slug', 'laravel-meetup')->firstOrFail();
+        Ticket::query()->where('event_id', $meetup->id)->where('status', 'valid')
             ->inRandomOrder()->limit(15)->pluck('code')
-            ->each(fn (string $code) => $checkIn->execute($door, $code));
+            ->each(fn (string $code) => $checkIn->execute($door, $meetup, $code, 'Main gate'));
     }
 
     /** Orders happened over the last two weeks, not all in the last second. Status columns are never touched. */

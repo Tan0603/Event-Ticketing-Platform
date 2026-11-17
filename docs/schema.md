@@ -203,10 +203,12 @@ One row per seat, created when an order becomes paid.
 | UNIQUE (order_item_id, seq) | issuing twice (webhook retry, duplicate event) cannot create a second set |
 | UNIQUE (code) | a QR code identifies exactly one ticket |
 | INDEX (order_id) | tickets of an order (ticket page, e-mail) |
-| INDEX (event_id, status) | attendee lists and check-in counts per event |
+| INDEX (event_id, status) | check-in counts per event |
+| INDEX (event_id, ticket_type_id, status) | attendee list per event filtered by ticket type and check-in status |
 | INDEX (ticket_type_id) | tickets per tier (reports) |
 | CHECK status IN (...) | no invalid status |
-| CHECK (status = 'used') = (checked_in_at IS NOT NULL) | a used ticket always has a check-in time and vice versa |
+| CHECK (status = 'checked_in') = (checked_in_at IS NOT NULL) | a checked-in ticket always has a check-in time and vice versa |
+| gate_name (nullable) | which entrance scanned the ticket |
 
 ### `order_notifications` (tenant database)
 

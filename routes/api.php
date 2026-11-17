@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AttendeeController;
 use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\ReportController;
@@ -57,10 +58,15 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
     Route::middleware(['auth:sanctum', 'tenant.token'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-        // Door staff and admins scan tickets at the entrance.
-        Route::post('/check-in', [CheckInController::class, 'store'])->middleware(['can:check-in', 'throttle:check-in']);
+        // Door staff and admins scan tickets at the entrance and watch the door numbers.
+        Route::middleware('can:check-in')->prefix('admin/events/{event}/check-ins')->group(function () {
+            Route::post('/', [CheckInController::class, 'store'])->middleware('throttle:check-in');
+            Route::get('stats', [CheckInController::class, 'stats']);
+        });
 
         Route::middleware('can:access-admin')->prefix('admin')->group(function () {
+            Route::get('events/{event}/attendees', [AttendeeController::class, 'index']);
+
             Route::apiResource('events', EventController::class);
             Route::post('events/{event}/publish', [EventController::class, 'publish']);
             Route::post('events/{event}/cancel', [EventController::class, 'cancel']);

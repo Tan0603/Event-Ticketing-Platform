@@ -33,7 +33,7 @@ class DashboardSummary
         $sales = DB::selectOne('SELECT COUNT(*) AS orders, COALESCE(SUM(total_minor), 0) AS gross, COALESCE(SUM(fee_minor), 0) AS fees FROM orders WHERE paid_at IS NOT NULL');
         $refunds = DB::selectOne('SELECT COUNT(*) AS n, COALESCE(SUM(amount_minor), 0) AS total FROM refunds');
         $stock = DB::selectOne('SELECT COALESCE(SUM(sold), 0) AS sold, COALESCE(SUM(held), 0) AS held, COALESCE(SUM(quantity), 0) AS capacity FROM ticket_types');
-        $tickets = DB::selectOne("SELECT COUNT(*) FILTER (WHERE status = 'used') AS used, COUNT(*) FILTER (WHERE status = 'valid') AS valid FROM tickets");
+        $tickets = DB::selectOne("SELECT COUNT(*) FILTER (WHERE status = 'checked_in') AS used, COUNT(*) FILTER (WHERE status = 'valid') AS valid FROM tickets");
 
         $top = DB::select(
             "SELECT e.id, e.title,

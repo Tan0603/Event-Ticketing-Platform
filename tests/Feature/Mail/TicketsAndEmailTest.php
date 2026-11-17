@@ -96,7 +96,7 @@ describe('issuing tickets', function () {
 
             expect(fn () => DB::table('tickets')->insert(['order_id' => $first->order_id, 'order_item_id' => $first->order_item_id, 'ticket_type_id' => $first->ticket_type_id, 'event_id' => $first->event_id, 'seq' => $first->seq, 'code' => 'ANOTHERCODE00000000X', 'status' => 'valid', 'created_at' => now(), 'updated_at' => now()]))
                 ->toThrow(UniqueConstraintViolationException::class);
-            expect(fn () => DB::statement("UPDATE tickets SET status = 'used' WHERE id = ?", [$first->id]))->toThrow(QueryException::class);
+            expect(fn () => DB::statement("UPDATE tickets SET status = 'checked_in' WHERE id = ?", [$first->id]))->toThrow(QueryException::class);
         });
     });
 

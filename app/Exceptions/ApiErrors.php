@@ -35,7 +35,7 @@ final class ApiErrors
                 'message' => $e->getMessage(),
                 'errors' => $e->errors(),
             ], $e->status),
-            $e instanceof BusinessRuleException => self::make($e->errorCode, $e->getMessage(), $e->status),
+            $e instanceof BusinessRuleException => self::make($e->errorCode, $e->getMessage(), $e->status, [], $e->detail),
             $e instanceof AuthenticationException => self::make('unauthenticated', 'Authentication required.', 401),
             $e instanceof AuthorizationException => self::make('forbidden', 'This action is not allowed.', 403),
             $e instanceof ModelNotFoundException => self::make('not_found', 'Resource not found.', 404),
@@ -49,10 +49,13 @@ final class ApiErrors
         };
     }
 
-    /** @param array<string, string> $headers */
-    private static function make(string $error, string $message, int $status, array $headers = []): JsonResponse
+    /**
+     * @param  array<string, string>  $headers
+     * @param  array<string, mixed>  $detail
+     */
+    private static function make(string $error, string $message, int $status, array $headers = [], array $detail = []): JsonResponse
     {
-        return response()->json(['error' => $error, 'message' => $message], $status, $headers);
+        return response()->json(['error' => $error, 'message' => $message] + $detail, $status, $headers);
     }
 
     private static function codeFor(int $status): string

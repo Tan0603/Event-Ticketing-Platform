@@ -197,18 +197,20 @@ then recorded as `failed` on the notification row.
 
 ## Check-in (door staff and admins)
 
-`POST /api/check-in` with `{"code": "...", "event_id": 12}` (`event_id` optional: the gate the scanner is
-working). The decision is one statement, `UPDATE tickets SET status='used' ... WHERE code=? AND status='valid'
-... RETURNING`, so of two scanners racing on one code exactly one wins; there is no read-then-write in PHP.
+`POST /api/admin/events/{event}/check-ins` with `{"code": "...", "gate_name": "Gate A"}` (`gate_name` optional).
+The decision is one statement, `UPDATE tickets SET status='checked_in' ... WHERE code=? AND event_id=? AND status='valid'
+... RETURNING`, so of two gates racing on one code exactly one wins; there is no read-then-write in PHP.
+`GET /api/admin/events/{event}/check-ins/stats` (door staff and admins) returns total / checked_in / remaining per event
+and per ticket type; `GET /api/admin/events/{event}/attendees?ticket_type_id=&status=&per_page=` (admins) is the
+paginated attendee list.
 
 | result | status | `error` |
 |---|---|---|
 | admitted | 200 | |
-| unknown code (also another tenant's code) | 404 | `ticket_not_found` |
-| scanned before | 409 | `already_checked_in` (message has the first scan time) |
+| unknown code, a ticket of another event, or another tenant's code | 404 | `ticket_not_found` |
+| scanned before | 409 | `already_checked_in` (body has `checked_in_at`, `checked_in_by`, `gate_name`) |
 | refunded | 409 | `ticket_void` |
 | event cancelled | 409 | `event_cancelled` |
-| ticket of another event than `event_id` | 409 | `wrong_event` |
 
 Codes are trimmed and upper-cased, so a hand-typed code works.
 Proof under real concurrency: `php artisan stress:checkin demo-org <valid-code> door@demo.test password --requests=40`

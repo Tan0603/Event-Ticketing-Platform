@@ -29,7 +29,7 @@ it('seeds a believable tenant that keeps every invariant', function () {
         expect(DB::table('orders')->where('status', 'paid')->count())->toBeGreaterThan(0)
             ->and(DB::table('tickets')->join('orders', 'orders.id', '=', 'tickets.order_id')->whereIn('orders.status', ['pending', 'failed', 'expired'])->count())->toBe(0)
             ->and(DB::table('refunds')->count())->toBe(DB::table('orders')->where('status', 'refunded')->count())
-            ->and(DB::table('tickets')->where('status', 'used')->count())->toBeGreaterThan(0)
+            ->and(DB::table('tickets')->where('status', 'checked_in')->count())->toBeGreaterThan(0)
             ->and(DB::table('users')->where('email', 'door@demo.test')->where('role', 'door_staff')->exists())->toBeTrue();
     });
 });

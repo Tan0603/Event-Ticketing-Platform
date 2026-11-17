@@ -22,6 +22,8 @@ class CheckInResource extends JsonResource
             'order_reference' => $this->order->reference,
             'event' => ['id' => $this->event->id, 'title' => $this->event->title],
             'checked_in_at' => TenantTime::iso($this->checked_in_at),
+            'checked_in_by' => $this->checkedInBy === null ? null : ['id' => $this->checkedInBy->id, 'name' => $this->checkedInBy->name],
+            'gate_name' => $this->gate_name,
         ];
     }
 }

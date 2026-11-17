@@ -164,7 +164,7 @@ describe('event report', function () {
     it('breaks sales and attendance down per ticket type', function () {
         ($this->timeline)();
         $code = $this->tenant->run(fn () => DB::table('tickets')->where('ticket_type_id', $this->vip->id)->value('code'));
-        $this->postJson('/api/check-in', ['code' => $code], tenantHeaders($this->tenant, UserRole::DoorStaff))->assertOk();
+        $this->postJson("/api/admin/events/{$this->event->id}/check-ins", ['code' => $code], tenantHeaders($this->tenant, UserRole::DoorStaff))->assertOk();
 
         $data = $this->getJson("/api/admin/events/{$this->event->id}/report", $this->admin)->assertOk()->json('data');
         $types = collect($data['ticket_types'])->keyBy('name');
