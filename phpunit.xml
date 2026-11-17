@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_KEY" value="base64:dGVzdGluZy1rZXktdGVzdGluZy1rZXktMzJieXRlcyE=" force="true"/>
+        <env name="TENANCY_DB_PREFIX" value="tenanttest_" force="true"/>
         <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
         <env name="BCRYPT_ROUNDS" value="4" force="true"/>
