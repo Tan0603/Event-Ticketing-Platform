@@ -50,6 +50,11 @@ return [
     'max_per_order_default' => 10,
     'max_per_order_cap' => 100,
 
+    'reports' => [
+        'default_days' => 30,   // the sales report covers this many days when no range is given
+        'max_days' => 366,      // longest range one request may ask for
+    ],
+
     'pagination' => [
         'default_per_page' => 20,
         'max_per_page' => 100,

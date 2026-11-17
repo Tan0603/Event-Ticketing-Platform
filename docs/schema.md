@@ -242,3 +242,11 @@ One row per refunded order, created in the same transaction that moves the order
 | INDEX (created_at) | reports group refunds by the day they happened |
 | INDEX (refunded_by) | serves the FK |
 | CHECK amount_minor >= 0 | no negative refunds |
+
+### Reporting indexes (tenant database)
+
+| index | why |
+|---|---|
+| `orders_paid_at_idx` ON orders (paid_at) WHERE paid_at IS NOT NULL | sales-by-day report slices orders by the day they were paid; partial because pending, failed and expired orders never have it, so the index stays small |
+| `refunds (created_at)` (see `refunds`) | sales-by-day report counts refunds on the day they happened |
+| `tickets (event_id, status)`, `orders (event_id, status)` (existing) | attendance and order counts per event |

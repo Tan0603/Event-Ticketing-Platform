@@ -9,6 +9,7 @@ use App\Domain\Orders\OrderStateMachine;
 use App\Enums\NotificationType;
 use App\Enums\OrderStatus;
 use App\Models\Tenant\Order;
+use App\Support\StorefrontCache;
 
 class MarkOrderPaid
 {
@@ -62,6 +63,7 @@ class MarkOrderPaid
     /** Everything a paid order owes the buyer: the tickets, and the e-mail that delivers them. */
     private function fulfil(Order $order): void
     {
+        StorefrontCache::flush(); // sold counts and the dashboard changed
         $this->issueTickets->execute($order);
         $this->queueEmail->execute($order, NotificationType::Confirmation);
     }
