@@ -8,6 +8,10 @@ return [
     // How long checkout holds inventory before the order expires.
     'hold_minutes' => (int) env('TICKETING_HOLD_MINUTES', 10),
 
+    // Name of an already migrated database that new tenant databases are cloned from (empty: migrate from scratch).
+    // Used by the test suite to provision tenants in milliseconds; leave empty in production.
+    'tenant_template_database' => (string) env('TICKETING_TENANT_TEMPLATE_DB', ''),
+
     // Tenant IDs that cannot be registered.
     'reserved_tenant_ids' => [
         'api', 'admin', 'www', 'register', 'central', 'app', 'auth', 'login',
