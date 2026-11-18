@@ -135,8 +135,21 @@ holds nothing twice; the same key with a different body is `422 idempotency_key_
 Errors: `404` unknown/unpublished event, `409` `insufficient_stock` / `sales_not_started` / `sales_ended` /
 `event_not_on_sale`, `422` validation (also a ticket type of another event, or above max per order), `429` throttled.
 
-**Fees:** `fee = round-half-up(subtotal x fee_bps / 10000) + fee_fixed`, all integer maths in `App\Domain\Money\FeeCalculator`;
-a free order (subtotal 0) has no fee. Example: 2 x 5000 -> subtotal 10000, fee 500 + 50, total 10550.
+**Fees (per ticket, not per order):** each tenant has `fee_percent_bps` (500 = 5.00 %) and `fee_fixed_minor` (sen).
+For every ticket the fee is `percent fee + fixed fee`, where the percent fee is the unit price x bps, rounded half-up
+with integer maths only: `intdiv(unit_price * bps + 5000, 10000)`. A line's fee is the ticket fee x quantity, and
+`total = sum(unit_price x quantity) + sum(line fees)`. A free ticket (price 0) has no fee. All of this is in
+`App\Domain\Money\FeeCalculator`; the amounts are saved on the order and its lines and never recomputed.
+
+Example with the defaults (5 % + RM 0.50, i.e. `fee_percent_bps` 500, `fee_fixed_minor` 50), buying
+2 x General (RM 50.00 = 5000 sen) and 1 x Early Bird (RM 33.30 = 3330 sen):
+
+| line | percent fee per ticket | + fixed | fee per ticket | x qty | line fee | line subtotal |
+|---|---|---|---|---|---|---|
+| General 5000 | `intdiv(5000 x 500 + 5000, 10000)` = 250 | 50 | 300 | 2 | 600 | 10000 |
+| Early Bird 3330 | `intdiv(3330 x 500 + 5000, 10000)` = 167 (166.5 rounds up) | 50 | 217 | 1 | 217 | 3330 |
+
+Subtotal 13330 sen (RM 133.30) + fees 817 sen (RM 8.17) = **total 14147 sen (RM 141.47)**.
 
 ### Proving it does not oversell
 
@@ -151,13 +164,20 @@ invariants PASS. (Absolute req/s depends on the machine; Docker Desktop on Windo
 
 ## Payments (webhook)
 
-`POST /api/webhooks/{tenant}/payments` is called by the payment provider. It cannot send our header, so the tenant is
-in the path, and the request is authenticated with `X-Signature` = hex HMAC-SHA256 of the **raw body**, keyed with the
-webhook secret of the tenant **in the URL** (shown once by `tenant:provision`), compared in constant time, before the
-body is read.
+`POST /api/webhooks/payments/{tenant}` is called by the payment provider (for example
+`http://localhost:8088/api/webhooks/payments/sunsetfest`). It cannot send our `X-Tenant-ID` header, so the tenant is
+in the path. There is no query-string or subdomain fallback.
+
+Headers: `Content-Type: application/json` and `X-Signature: <hex>`, where the signature is the hex HMAC-SHA256 of the
+**raw body**, keyed with the webhook secret of the tenant **in the URL** (shown by `GET /api/admin/settings`, and once
+by `tenant:provision`). It is compared in constant time before the body is read. A `sha256=<hex>` prefix is also accepted.
+
+Body fields: `id` (required, unique per notification), `type` (required: `payment.succeeded` or `payment.failed`),
+`payment_reference` (required, from the checkout response), `amount` (integer, minor units; required for
+`payment.succeeded`), `currency` (3 letters; required for `payment.succeeded`), `occurred_at` (optional date).
 
 ```json
-{"id":"evt_123","type":"payment.succeeded","data":{"order_reference":"ORD-...","amount_minor":10550,"currency":"MYR"}}
+{"id":"evt_123","type":"payment.succeeded","payment_reference":"pay_abc123def456","amount":14147,"currency":"MYR","occurred_at":"2026-11-23T10:00:00Z"}
 ```
 
 | result | meaning |
@@ -165,7 +185,8 @@ body is read.
 | `200 {"status":"paid"}` | pending order paid, the hold became a sale |
 | `200 {"status":"duplicate"}` | this event id was already processed (retry-safe, exactly once) |
 | `200 {"status":"failed"}` | pending order failed, tickets released |
-| `200 {"status":"paid_late"}` / `late_payment_no_stock` | the hold had already expired: honoured if stock is left, otherwise recorded for a refund |
+| `200 {"status":"paid_late"}` | the hold had already expired but the tickets were still free: the order is paid |
+| `200 {"status":"late_payment_no_stock"}` | the hold had expired and the tickets are gone: the order becomes `refund_pending` (no tickets, the organizer refunds) |
 | `422 amount_mismatch` | amount or currency differs from the order total: the order is NOT paid |
 | `401 invalid_signature` | missing or wrong signature |
 
@@ -174,6 +195,7 @@ To play the provider locally:
 ```bash
 docker compose exec app php artisan payments:simulate {tenant} {order_reference} succeeded   # or failed
 # --event-id=evt_1 (reuse to see duplicate handling)   --amount=1 (see the mismatch guard)
+# it signs the body with the tenant's secret and posts it to the real endpoint above
 ```
 
 After pulling new code: `php artisan migrate` (central) and `php artisan tenants:migrate` (every tenant database).
@@ -302,7 +324,13 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Cancelled events disappear from the public shop** (404, same as a draft). Their buyers are handled through orders and refunds, not the public page.
 - **Availability on the public page may lag by up to 15 seconds** (`TICKETING_CACHE_AVAILABILITY_TTL`). A buyer who sees tickets left can still be told "sold out" at checkout; PostgreSQL is the source of truth.
 
-- **A free ticket carries no fee** (the percentage and fixed fee are charged per paid ticket; a free order totals 0).
+- **Field names differ from the PDF.** The API uses these names (PDF name -> API name):
+  `price` -> `price_minor`, `sales_starts_at` -> `sales_start_at`, `sales_ends_at` -> `sales_end_at`.
+  `price_minor` makes the integer minor-unit rule (sen, never decimals) clear in the name, and `sales_start_at` /
+  `sales_end_at` match the other `*_at` timestamp fields. Event fields (`title`, `slug`, `venue_name`, `starts_at`,
+  `ends_at`, ...) keep the PDF names. The sales status values are the PDF's: `scheduled`, `on_sale`, `sold_out`, `ended`.
+
+- **A free ticket carries no fee** (the percentage and fixed fee are charged per paid ticket, as the spec says; a free order totals 0).
 - **A `refund_pending` order is not counted as a sale** in reports (money was taken but no tickets exist); it counts as a refund once refunded.
 - **Route paths differ from the PDF's suggestions** (`/events/{slug}/checkout`, `/public/{tenant}/...` signed URLs, per-event check-in under `/admin`); the PDF allows other paths. Behaviour and status codes follow the PDF.
 - **Architecture and reasoning** are in [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -311,7 +339,7 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Containers log to stderr** (`LOG_CHANNEL=stderr`): php-fpm and artisan run as different users and cannot share one log file.
 
 - **A payment after `expires_at` but before the expiry job ran is a normal payment** (the order is still pending).
-- **A payment after the job released the hold** is honoured only if the tickets are still free; otherwise the order stays expired and the notification is recorded as `late_payment_no_stock` for a refund.
+- **A payment after the job released the hold** (order already `expired`) is handled in one transaction, all or nothing. If every ticket is still free, the order becomes `paid` and the tickets are issued (`paid_late`). If any ticket is gone, nothing is sold and the order moves to `refund_pending` (`late_payment_no_stock`): the money was taken but there are no tickets, so the organizer must refund it.
 - **An amount mismatch is answered 422 and never marks the order paid.** The event id is recorded, so the provider must send a corrected notification under a new id.
 - **An unknown order reference is answered 200** (`unknown_order`) so the provider does not retry forever.
 - **A free order (total 0) is paid immediately at checkout.**
