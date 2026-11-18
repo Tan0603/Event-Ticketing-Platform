@@ -26,6 +26,8 @@ class StoreEventRequest extends FormRequest
             'venue_address' => ['nullable', 'string', 'max:500'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
+            // Shared by all ticket types of the event; omit or null for no event-level limit.
+            'capacity' => ['nullable', 'integer', 'min:1', 'max:10000000'],
         ];
     }
 
@@ -39,6 +41,7 @@ class StoreEventRequest extends FormRequest
             startsAt: TenantTime::parse($this->validated('starts_at')),
             endsAt: TenantTime::parse($this->validated('ends_at')),
             venueAddress: $this->validated('venue_address'),
+            capacity: $this->validated('capacity'),
         );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Storefront;
 
 use App\Actions\Checkout\CheckoutData;
+use App\Models\Tenant\PromoCode;
 use Illuminate\Foundation\Http\FormRequest;
 
 class CheckoutRequest extends FormRequest
@@ -27,6 +28,8 @@ class CheckoutRequest extends FormRequest
             'items' => ['required', 'array', 'min:1', 'max:20'],
             'items.*.ticket_type_id' => ['required', 'integer', 'min:1', 'distinct'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:'.config('ticketing.max_per_order_cap')],
+            // Optional promo code, any letter case; unknown codes are answered promo_code_invalid.
+            'promo_code' => ['nullable', 'string', 'max:50'],
             'idempotency_key' => ['nullable', 'string', 'min:8', 'max:100', 'regex:/^[A-Za-z0-9_\-:.]+$/'],
         ];
     }
@@ -44,6 +47,7 @@ class CheckoutRequest extends FormRequest
             buyerEmail: strtolower(trim($this->validated('buyer_email'))),
             items: $items,
             idempotencyKey: $this->validated('idempotency_key'),
+            promoCode: ($promo = $this->validated('promo_code')) === null || trim($promo) === '' ? null : PromoCode::normalize($promo),
         );
     }
 }

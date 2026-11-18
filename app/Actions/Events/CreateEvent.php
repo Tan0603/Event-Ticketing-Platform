@@ -20,6 +20,7 @@ class CreateEvent
             'venue_address' => $data->venueAddress,
             'starts_at' => $data->startsAt,
             'ends_at' => $data->endsAt,
+            'capacity' => $data->capacity,
         ]);
 
         $event->status = EventStatus::Draft;

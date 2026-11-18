@@ -47,7 +47,7 @@ class EventReport
         ))->keyBy('ticket_type_id');
 
         $orders = collect(DB::select('SELECT status, COUNT(*) AS n FROM orders WHERE event_id = ? GROUP BY status', [$event->id]))->pluck('n', 'status');
-        $fees = DB::selectOne('SELECT COALESCE(SUM(fee_minor), 0) AS fees FROM orders WHERE event_id = ? AND status = ?', [$event->id, 'paid']);
+        $fees = DB::selectOne('SELECT COALESCE(SUM(fee_minor), 0) AS fees, COALESCE(SUM(discount_minor), 0) AS discounts FROM orders WHERE event_id = ? AND status = ?', [$event->id, 'paid']);
 
         $rows = array_map(function (object $type) use ($money, $attendance): array {
             $m = $money->get($type->id);
@@ -76,7 +76,7 @@ class EventReport
         $sold = $sum('sold');
 
         return [
-            'event' => ['id' => $event->id, 'title' => $event->title, 'status' => $event->status->value],
+            'event' => ['id' => $event->id, 'title' => $event->title, 'status' => $event->status->value, 'capacity' => $event->capacity, 'capacity_remaining' => $event->capacityRemaining()],
             'currency' => (string) tenant('currency'),
             'ticket_types' => $rows,
             'totals' => [
@@ -87,6 +87,7 @@ class EventReport
                 'refunded_minor' => $sum('refunded_minor'),
                 'net_minor' => $sum('net_minor'),
                 'fees_minor' => (int) $fees->fees,
+                'discounts_minor' => (int) $fees->discounts, // promo code discounts on paid orders (gross_minor is before them)
                 'checked_in' => $sum('checked_in'),
                 'awaiting_check_in' => $sum('awaiting_check_in'),
                 'void' => $sum('void'),

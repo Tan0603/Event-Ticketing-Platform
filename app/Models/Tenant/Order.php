@@ -28,6 +28,9 @@ use LogicException;
  * @property string $payment_reference
  * @property int $fee_minor
  * @property int $total_minor
+ * @property int $discount_minor
+ * @property int|null $promo_code_id
+ * @property string|null $promo_code
  * @property int $fee_percent_bps
  * @property int $fee_fixed_minor
  * @property CarbonInterface $expires_at
@@ -65,6 +68,8 @@ class Order extends Model
             'subtotal_minor' => 'integer',
             'fee_minor' => 'integer',
             'total_minor' => 'integer',
+            'discount_minor' => 'integer',
+            'promo_code_id' => 'integer',
             'fee_percent_bps' => 'integer',
             'fee_fixed_minor' => 'integer',
             'expires_at' => 'immutable_datetime',

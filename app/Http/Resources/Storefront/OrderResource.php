@@ -38,6 +38,8 @@ class OrderResource extends JsonResource
                 'line_total_minor' => $item->line_total_minor,
             ])->all(),
             'subtotal_minor' => $this->subtotal_minor,
+            'discount_minor' => $this->discount_minor,
+            'promo_code' => $this->promo_code,
             'fee_minor' => $this->fee_minor,
             'total_minor' => $this->total_minor,
             'expires_at' => TenantTime::iso($this->expires_at),

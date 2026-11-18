@@ -217,7 +217,7 @@ describe('listing and showing', function () {
             ->assertOk()
             ->assertJsonPath('meta.total', 1)
             ->assertJsonPath('data.0.ticket_types_count', 2)
-            ->assertJsonPath('data.0.capacity', 150)
+            ->assertJsonPath('data.0.tickets_capacity', 150)
             ->assertJsonPath('data.0.tickets_sold', 50);
 
         $this->getJson('/api/admin/events?per_page=5000', $this->h)->assertStatus(422);

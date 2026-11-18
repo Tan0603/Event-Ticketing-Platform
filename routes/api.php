@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AttendeeController;
 use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\OrderController;
+use App\Http\Controllers\Admin\PromoCodeController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\TicketTypeController;
@@ -81,6 +82,8 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
             Route::get('orders', [OrderController::class, 'index']);
             Route::get('orders/{order:reference}', [OrderController::class, 'show']);
             Route::post('orders/{order:reference}/refund', [OrderController::class, 'refund']);
+
+            Route::apiResource('promo-codes', PromoCodeController::class)->parameters(['promo-codes' => 'promoCode']);
 
             Route::get('events/{event}/ticket-types', [TicketTypeController::class, 'index']);
             Route::post('events/{event}/ticket-types', [TicketTypeController::class, 'store']);

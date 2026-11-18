@@ -4,11 +4,13 @@ namespace App\Console\Commands;
 
 use App\Enums\OrderStatus;
 use App\Models\Central\Tenant;
+use App\Models\Tenant\Event;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TicketType;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -43,7 +45,7 @@ class StressCheckout extends Command
         $concurrency = max(1, (int) $this->option('concurrency'));
         $ticketTypeId = (int) $this->argument('ticket_type');
 
-        /** @var array{slug: string, name: string, quantity: int, sold: int, held: int}|null $before */
+        /** @var array{slug: string, name: string, quantity: int, sold: int, held: int, capacity: int|null, reserved: int}|null $before */
         $before = $tenant->run(function () use ($ticketTypeId): ?array {
             $tier = TicketType::query()->with('event')->find($ticketTypeId);
 
@@ -53,6 +55,8 @@ class StressCheckout extends Command
                 'quantity' => $tier->quantity,
                 'sold' => $tier->sold,
                 'held' => $tier->held,
+                'capacity' => $tier->event->capacity,
+                'reserved' => $tier->event->reserved,
             ];
         });
 
@@ -67,6 +71,9 @@ class StressCheckout extends Command
             $this->warn("{$requests} requests exceed the per-IP limit of {$ipLimit}/min: some will be answered 429.");
         }
 
+        if ($before['capacity'] !== null) {
+            $this->line("Event shared capacity {$before['capacity']} (reserved {$before['reserved']}).");
+        }
         $this->info("Tenant {$tenant->id} · \"{$before['name']}\" · quantity {$before['quantity']} (sold {$before['sold']}, held {$before['held']})");
         $this->info("Sending {$requests} checkouts of {$quantity} ticket(s), {$concurrency} at a time ...");
 
@@ -107,7 +114,7 @@ class StressCheckout extends Command
 
         $created = collect($responses)->filter(fn ($r) => $r instanceof Response && $r->status() === 201)->count();
 
-        /** @var array{sold: int, held: int, quantity: int, pending_lines: int} $after */
+        /** @var array{sold: int, held: int, quantity: int, pending_lines: int, reserved: int, tiers_taken: int} $after */
         $after = $tenant->run(function () use ($ticketTypeId): array {
             $tier = TicketType::query()->findOrFail($ticketTypeId);
 
@@ -115,6 +122,8 @@ class StressCheckout extends Command
                 'sold' => $tier->sold,
                 'held' => $tier->held,
                 'quantity' => $tier->quantity,
+                'reserved' => (int) Event::query()->whereKey($tier->event_id)->value('reserved'),
+                'tiers_taken' => (int) TicketType::query()->where('event_id', $tier->event_id)->sum(DB::raw('sold + held')),
                 'pending_lines' => (int) OrderItem::query()
                     ->where('ticket_type_id', $ticketTypeId)
                     ->whereHas('order', fn ($q) => $q->where('status', OrderStatus::Pending))
@@ -129,6 +138,11 @@ class StressCheckout extends Command
             ['held = tickets in pending orders' => [$after['held'], '= '.$after['pending_lines'], $after['held'] === $after['pending_lines']]],
         ];
 
+        if ($before['capacity'] !== null) {
+            $checks[] = ['event reserved <= event capacity' => [$after['reserved'], '<= '.$before['capacity'], $after['reserved'] <= $before['capacity']]];
+            $checks[] = ['event reserved = sold + held of its tiers' => [$after['reserved'], '= '.$after['tiers_taken'], $after['reserved'] === $after['tiers_taken']]];
+        }
+
         $ok = true;
         $rows = [];
         foreach ($checks as $check) {
@@ -140,6 +154,9 @@ class StressCheckout extends Command
         $this->table(['', 'invariant', 'value'], $rows);
 
         $remaining = $before['quantity'] - $before['sold'] - $before['held'];
+        if ($before['capacity'] !== null) {
+            $remaining = min($remaining, $before['capacity'] - $before['reserved']); // the event's shared capacity caps the tier
+        }
         $expectedCreated = min($requests, intdiv(max($remaining, 0), $quantity));
         $this->line("Stock available before: {$remaining} -> expected {$expectedCreated} orders, got {$created}.");
 

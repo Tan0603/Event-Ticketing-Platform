@@ -31,6 +31,7 @@ class UpdateEventRequest extends FormRequest
             'venue_address' => ['sometimes', 'nullable', 'string', 'max:500'],
             'starts_at' => ['sometimes', 'required', 'date'],
             'ends_at' => ['sometimes', 'required', 'date'],
+            'capacity' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10000000'],
         ];
     }
 

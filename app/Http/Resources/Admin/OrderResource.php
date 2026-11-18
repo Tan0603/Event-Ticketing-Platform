@@ -28,6 +28,8 @@ class OrderResource extends JsonResource
             'buyer_email' => $this->buyer_email,
             'currency' => $this->currency,
             'subtotal_minor' => $this->subtotal_minor,
+            'discount_minor' => $this->discount_minor,
+            'promo_code' => $this->promo_code,
             'fee_minor' => $this->fee_minor,
             'total_minor' => $this->total_minor,
             'created_at' => TenantTime::iso($this->created_at),

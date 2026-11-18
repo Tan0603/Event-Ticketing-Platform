@@ -33,6 +33,10 @@ class UpdateTicketType
             $newQuantity = $attributes['quantity'] ?? null;
             unset($attributes['quantity']);
 
+            if (array_key_exists(TierPredecessor::FIELD, $attributes)) {
+                TierPredecessor::assertValid($event->id, $locked->id, $attributes[TierPredecessor::FIELD]); // under the event lock: no concurrent loop
+            }
+
             $locked->fill($attributes);
             SalesWindow::assertValid($event, $locked->sales_start_at, $locked->sales_end_at);
             $locked->save();
