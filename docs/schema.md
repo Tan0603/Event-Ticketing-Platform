@@ -115,7 +115,7 @@ The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never s
 | CHECK sales_end_at > sales_start_at (when both set) | a window cannot be empty or reversed |
 | FK event_id RESTRICT | an event with tiers cannot vanish underneath them (the delete action removes tiers explicitly) |
 
-The sales status (`on_sale` / `upcoming` / `ended` / `sold_out` / ...) is computed on read from the window, the
+The sales status (`on_sale` / `scheduled` / `ended` / `sold_out` / ...) is computed on read from the window, the
 counters and the event state.
 
 ### `orders` (tenant database)

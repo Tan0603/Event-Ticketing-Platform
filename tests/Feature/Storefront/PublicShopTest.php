@@ -119,7 +119,7 @@ describe('event page', function () {
 
         $statuses = collect($this->getJson('/api/events/mixed', $this->pub)->assertOk()->json('data.ticket_types'))->pluck('sales_status', 'name');
 
-        expect($statuses->all())->toBe(['Gone' => 'sold_out', 'Soon' => 'upcoming', 'Over' => 'ended']);
+        expect($statuses->all())->toBe(['Gone' => 'sold_out', 'Soon' => 'scheduled', 'Over' => 'ended']);
     });
 
     it('hides drafts, cancelled and unknown events behind the same 404', function () {
@@ -225,7 +225,7 @@ describe('caching', function () {
             TicketType::factory()->for($event)->create(['sales_start_at' => '2027-01-01 00:01:00']);
         });
 
-        $this->getJson('/api/events/sunset', $this->pub)->assertJsonPath('data.ticket_types.0.sales_status', 'upcoming');
+        $this->getJson('/api/events/sunset', $this->pub)->assertJsonPath('data.ticket_types.0.sales_status', 'scheduled');
 
         Carbon::setTestNow('2027-01-01 00:02:00'); // well inside the long TTL of the descriptive data
         $this->getJson('/api/events/sunset', $this->pub)->assertJsonPath('data.ticket_types.0.sales_status', 'on_sale');
