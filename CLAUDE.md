@@ -10,7 +10,7 @@ API only: no frontend, no Vite, no Breeze/Jetstream. Blade is used only for emai
 Ask before adding any composer package not listed in ARCHITECTURE.md §0.
 
 ## Commands
-- `docker compose up -d`: app, nginx, postgres, redis, horizon, scheduler, mailpit (UI http://localhost:8025)
+- `docker compose up -d`: app, nginx, postgres, redis, horizon, scheduler, mailpit (UI http://localhost:8026)
 - `composer test`: full Pest suite (must pass before every commit)
 - `vendor/bin/pint && vendor/bin/phpstan analyse`: must be clean before every commit
 - `php artisan stress:checkout {tenant} {ticket_type} --requests=200`
