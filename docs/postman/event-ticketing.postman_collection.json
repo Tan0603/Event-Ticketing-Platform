@@ -399,7 +399,22 @@
               }
             ],
             "url": "{{base_url}}/admin/settings"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 300) { return; }",
+                  "const json = pm.response.json();",
+                  "const d = json.data || json;",
+                  "const s = (d.payments && d.payments.webhook_secret) || d.webhook_secret;",
+                  "if (s) { pm.collectionVariables.set('webhook_secret', s); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Dashboard",
@@ -510,7 +525,22 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 300) { return; }",
+                  "const json = pm.response.json();",
+                  "const d = json.data || json;",
+                  "if (d.id) { pm.collectionVariables.set('event_id', String(d.id)); }",
+                  "if (d.slug) { pm.collectionVariables.set('slug', d.slug); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Add ticket type",
@@ -536,6 +566,97 @@
                 }
               }
             }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 300) { return; }",
+                  "const json = pm.response.json();",
+                  "const d = json.data || json;",
+                  "if (d.id) { pm.collectionVariables.set('ticket_type_id', String(d.id)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List ticket types of an event",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types"
+          }
+        },
+        {
+          "name": "Show ticket type",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}"
+          }
+        },
+        {
+          "name": "Update ticket type (send only the fields to change)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_minor\": 8000,\n  \"quantity\": 150\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete ticket type (only when nothing sold or held)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}"
           }
         },
         {
