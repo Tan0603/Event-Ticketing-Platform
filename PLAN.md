@@ -1,10 +1,48 @@
 # Build Plan — Event Ticketing Platform
 
 This is the step-by-step plan for building the project, written in plain language.
-The full technical details live in `ARCHITECTURE.md`. The original assignment is the PDF
-(to be copied into `docs/REQUIREMENTS.md`).
+The full technical details live in `ARCHITECTURE.md`. The original assignment (the PDF) is
+copied into `docs/REQUIREMENTS.md`. If this plan and that file disagree, `docs/REQUIREMENTS.md` wins.
 
-**Started:** 16 Nov 2026 · **Review:** 23 Nov 2026
+**Started:** 16 Nov 2026 · **Last updated:** 18 Nov 2026 · **Review:** 23 Nov 2026
+
+---
+
+## Where we are now (18 Nov 2026)
+
+**All phases 0–14 are built and merged into `staging`.** A full end-to-end test on `staging` gave:
+
+| Check | Result |
+|---|---|
+| Automated tests (`composer test`) | 365 / 365 pass |
+| Code style (Pint) and static analysis (Larastan) | clean |
+| Live API walk-through (sign-up → event → checkout → pay → email → scan → refund) | all pass |
+| 200 buyers at once on a 50-ticket tier | exactly 50 held, 150 politely refused, no crashes |
+| 40 scans of the same ticket at once | exactly 1 admitted |
+| Bulk test data for one organizer | about 11 s (target under 3 min) |
+| Speed targets | all met, see Phase 13 |
+
+### Still to fix before review day
+
+Ordered by priority. Tick each one off here when it's merged.
+
+| # | Problem | Why it matters | Where |
+|---|---|---|---|
+| 1 | [ ] Sales status says `upcoming` before sales open, but the PDF calls it **`scheduled`** | A reviewer checking statuses against the PDF will see a mismatch | `app/Enums/SalesStatus.php` + tests |
+| 2 | [ ] README shows the **old fee formula** (per order, example 10550) and the **old webhook URL and body** | Reviewers follow the README; the code now uses per-ticket fees and `/api/webhooks/payments/{tenant}` | `README.md` "Fees" and webhook sections |
+| 3 | [ ] README Assumption says a late payment with no stock "stays expired"; the code now moves it to **`refund_pending`** | The written rule contradicts the behaviour | `README.md` Assumptions |
+| 4 | [ ] `.env.example` has `APP_URL=http://localhost`, but the app runs on port **8088** | The ticket link in the email doesn't open in Docker | `.env.example` |
+| 5 | [ ] The bulk seeder **crashes on an organizer that already has orders** (duplicate ticket error) | Running it on `demo-org` after a demo fails | `database/seeders/Tenant/BulkSeeder.php` (`createTickets()` must only touch bulk orders) |
+| 6 | [ ] Field names differ from the PDF (`sales_start_at` / `sales_end_at` / `price_minor` vs `sales_starts_at` / `sales_ends_at` / `price`) and this isn't written down | Small, but should be an Assumption | `README.md` Assumptions |
+| 7 | [ ] A "not found" error shows the internal class name (e.g. `App\Models\Event`) | Leaks internals; looks unpolished | `app/Exceptions/ApiErrors.php` (Laravel turns the model miss into a plain 404 that keeps the class name in its message) |
+
+### Done since the first plan
+
+- Postman collection now has full ticket-tier CRUD (list, show, update, delete), and saves
+  `event_id`, `slug`, `ticket_type_id` and `webhook_secret` automatically (PR #3).
+- Payment webhook follows the PDF's message format, uses `payment_reference`, and supports `refund_pending`.
+- Fees are worked out **per ticket**, matching the worked example (159.97).
+- Check-in, stats and attendee list live under each event (`/admin/events/{event}/...`).
 
 ---
 
@@ -166,6 +204,25 @@ uses A's token against B.
 - You can't delete a tier that has sales.
 - Changing a price never changes orders that already exist.
 - "Upcoming / live / ended" and "on sale / sold out" are **worked out from the dates**, not saved.
+- A tier's sales status is one of: **scheduled** (before sales open), **on_sale**, **sold_out**
+  (sold + held = quantity) or **ended** (after sales close). Left to buy = quantity − sold − active holds.
+  (The code currently says `upcoming` instead of `scheduled`, see "Still to fix" #1.)
+- `max_per_order` is 10 if not given. A tier's sales must close by the time the event ends.
+- A published event must keep at least one tier.
+
+**The API** (admin login token + `X-Tenant-ID` header on every request):
+
+| What | Method and URL |
+|---|---|
+| List / create events | `GET` / `POST /api/admin/events` |
+| Publish / cancel an event | `POST /api/admin/events/{event}/publish` · `/cancel` |
+| List the tiers of an event | `GET /api/admin/events/{event}/ticket-types` |
+| Add a tier | `POST /api/admin/events/{event}/ticket-types` |
+| Show a tier | `GET /api/admin/ticket-types/{id}` |
+| Edit a tier (send only what changes, e.g. `{"price_minor": 8000}` = RM 80.00) | `PATCH /api/admin/ticket-types/{id}` |
+| Delete a tier (only if nothing sold or held) | `DELETE /api/admin/ticket-types/{id}` |
+
+All of these are in the Postman collection under **Admin**.
 
 **How we check it:** Create, edit and delete tests for each rule, plus a test that organizer
 A can't see or edit B's events.
@@ -281,7 +338,7 @@ Every other change is not allowed, and that is checked in **one single place** i
 - If sending fails, it retries with a growing delay. If it fails for good, we record it and
   move on without blocking other emails.
 
-**How we check it:** Open the email in Mailpit (http://localhost:8025) and see the QR codes.
+**How we check it:** Open the email in Mailpit (http://localhost:8026 with Docker) and see the QR codes.
 
 ---
 
@@ -367,6 +424,18 @@ only affects its own orders, and that reminders are never sent twice.
 | Sales report for 3 months | under 1 s |
 | Filling one organizer with data | under 3 min |
 
+**Measured on 18 Nov** (inside the app, without Docker-on-Windows overhead):
+
+| What | Target | Measured |
+|---|---|---|
+| Event page (cached) | under 0.1 s | about 1 ms (5 ms uncached) |
+| Checkout, slowest 5% | under 0.3 s | about 90 ms |
+| Sales report / dashboard | under 1 s | about 15 ms per event / 65 ms |
+| Filling one organizer with data | under 3 min | about 11 s |
+
+Run it: `docker compose exec app php artisan demo:seed-bulk alpha-events beta-tickets`
+(create and activate those organizers first). Only use **fresh** organizers until "Still to fix" #5 is done.
+
 ---
 
 ## Phase 14 — Final documents and check
@@ -396,13 +465,31 @@ Cheapest first:
 
 ---
 
-## Decisions still to confirm
+## Decisions (all confirmed and written in the README Assumptions)
 
-| # | Question | My suggestion | Needed before |
-|---|---|---|---|
-| 1 | The purchase limit per IP would block the reviewers' 200-at-once test (they'd only get 10 through, not 50) | Keep the strict limit per email, make the per-IP limit high (e.g. 300 a minute), and explain it in Assumptions | Phase 6 |
-| 2 | Can a failed organizer ID be used again? | Not through sign-up. An admin command frees it | Phase 2 |
-| 3 | Can an event with unpaid orders be deleted? | No. Block deleting if it has any orders (stricter than the assignment) | Phase 4 |
-| 4 | Payment arrives after 10 minutes but before the timer ran | Treat it as a normal payment | Phase 7 |
-| 5 | How does the organizer get their payment secret key? | Shown after setup, and on an admin settings page | Phase 7 |
-| 6 | How does a refunded order show in the sales report? | As a sale on the day it was paid, and as a refund on the day it was refunded | Phase 12 |
+| # | Question | Decision |
+|---|---|---|
+| 1 | The purchase limit per IP would block the reviewers' 200-at-once test | ✅ Strict limit per email (10 a minute), high limit per IP (300 a minute) |
+| 2 | Can a failed organizer ID be used again? | ✅ Not through sign-up. `php artisan tenant:purge {id}` frees it |
+| 3 | Can an event with orders be deleted? | ✅ No. Cancel it instead |
+| 4 | Payment arrives after 10 minutes but before the timer ran | ✅ Treated as a normal payment |
+| 5 | How does the organizer get their payment secret key? | ✅ `GET /api/admin/settings` (Postman saves it automatically) |
+| 6 | How does a refunded order show in the sales report? | ✅ A sale on the day it was paid, a refund on the day it was refunded. `refund_pending` is not counted as a sale |
+
+---
+
+## Testing it by hand (Postman + Docker)
+
+1. `docker compose up -d`, then import `docs/postman/event-ticketing.postman_collection.json` into Postman.
+2. Set the collection variables `tenant`, `email` and `password`, then run **Auth › Login**.
+3. **Admin › Create event**, then **Add ticket type**, then **Publish event**. The ids are saved for you.
+4. **Public shop › Checkout**. It saves the order `reference`.
+5. Pay: `docker compose exec app php artisan payments:simulate <tenant> <reference> succeeded`.
+   Use the `reference` (starts with `ORD-`), not the `payment_reference`.
+6. Open Mailpit (http://localhost:8026) to see the email with QR codes. Copy a ticket code.
+7. **Check-in › Scan a ticket**: the first scan works, the second gives 409.
+8. **Admin › Refund order** on an order that hasn't been scanned.
+
+Order status reference: pending → paid / failed / expired; expired → paid (stock left) or
+refund_pending (no stock); paid or refund_pending → refunded. A payment message for an order that is
+already failed, refunded or refund_pending answers `ignored`.
