@@ -56,6 +56,14 @@
     {
       "key": "ticket_code",
       "value": ""
+    },
+    {
+      "key": "vip_ticket_type_id",
+      "value": ""
+    },
+    {
+      "key": "early_bird_ticket_type_id",
+      "value": ""
     }
   ],
   "item": [
@@ -579,6 +587,92 @@
                   "if (d.id) { pm.collectionVariables.set('ticket_type_id', String(d.id)); }"
                 ]
               }
+            }
+          ]
+        },
+        {
+          "name": "Add VIP + Early Bird (right-click > Run folder)",
+          "description": "Sends both requests one after the other for the event in {{event_id}}. Each saves its own id: vip_ticket_type_id and early_bird_ticket_type_id.",
+          "item": [
+            {
+              "name": "Add VIP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"VIP\",\n  \"description\": \"Front rows\",\n  \"price_minor\": 15000,\n  \"quantity\": 20,\n  \"max_per_order\": 2,\n  \"sort_order\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code >= 300) { return; }",
+                      "const json = pm.response.json();",
+                      "const d = json.data || json;",
+                      "if (d.id) { pm.collectionVariables.set('vip_ticket_type_id', String(d.id)); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Add Early Bird",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Early Bird\",\n  \"description\": \"Cheaper, limited seats\",\n  \"price_minor\": 3500,\n  \"quantity\": 50,\n  \"max_per_order\": 4,\n  \"sort_order\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code >= 300) { return; }",
+                      "const json = pm.response.json();",
+                      "const d = json.data || json;",
+                      "if (d.id) { pm.collectionVariables.set('early_bird_ticket_type_id', String(d.id)); }"
+                    ]
+                  }
+                }
+              ]
             }
           ]
         },
