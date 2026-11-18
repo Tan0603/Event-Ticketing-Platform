@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AttendeeController;
+use App\Http\Controllers\Admin\AttendeeExportController;
 use App\Http\Controllers\Admin\EventController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PromoCodeController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Admin\TicketTypeController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Central\RegisterController;
 use App\Http\Controllers\CheckInController;
+use App\Http\Controllers\Storefront\AttendeeExportDownloadController;
 use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\EventController as StorefrontEventController;
 use App\Http\Controllers\Storefront\TicketController;
@@ -42,6 +44,8 @@ Route::post('/webhooks/payments/{tenant}', [PaymentWebhookController::class, 'ha
 Route::middleware(['tenant.path', 'tenant.active', 'throttle:storefront', 'signed'])->prefix('public/{tenant}')->group(function () {
     Route::get('/orders/{reference}/tickets', [TicketController::class, 'show'])->name('public.tickets.show');
     Route::get('/tickets/{code}/qr', [TicketController::class, 'qr'])->name('public.tickets.qr');
+    // The admin's e-mailed CSV link (30 minutes by default).
+    Route::get('/attendee-exports/{export}/download', AttendeeExportDownloadController::class)->name('public.attendee-exports.download');
 });
 
 Route::middleware(['tenant', 'tenant.active'])->group(function () {
@@ -67,6 +71,8 @@ Route::middleware(['tenant', 'tenant.active'])->group(function () {
 
         Route::middleware('can:access-admin')->prefix('admin')->group(function () {
             Route::get('events/{event}/attendees', [AttendeeController::class, 'index']);
+            Route::post('events/{event}/attendee-exports', [AttendeeExportController::class, 'store'])->middleware('throttle:exports');
+            Route::get('attendee-exports/{attendeeExport}', [AttendeeExportController::class, 'show']);
 
             Route::apiResource('events', EventController::class);
             Route::post('events/{event}/publish', [EventController::class, 'publish']);
