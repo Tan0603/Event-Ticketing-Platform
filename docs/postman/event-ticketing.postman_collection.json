@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Event Ticketing Platform",
-    "description": "Multi-tenant ticketing API. Set the collection variables `base_url` and `tenant`, run `Auth > Login` once (it stores `token`), then use the rest. Webhook calls need `webhook_secret` (see Admin > Settings) and the pre-request script signs the body for you.",
+    "description": "Multi-tenant ticketing API. Set the collection variables `base_url` and `tenant`, run `Auth > Login` once (it stores `token`), then use the rest. Webhook calls need `webhook_secret` (see Admin > Settings) and the pre-request script signs the body for you. Every POST/PATCH request lists all the fields its FormRequest accepts, with a per-field table (required/optional, units, rules) in its description. Amounts are integer minor units (sen).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -56,6 +56,18 @@
     {
       "key": "ticket_code",
       "value": ""
+    },
+    {
+      "key": "promo_code_id",
+      "value": "1"
+    },
+    {
+      "key": "export_id",
+      "value": "1"
+    },
+    {
+      "key": "export_download_url",
+      "value": ""
     }
   ],
   "item": [
@@ -81,7 +93,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Central route: no `X-Tenant-ID`. Answers 202; poll **Registration status**.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `tenant_id` | required | string | 3-30 chars, lowercase letters/digits/hyphens, not reserved (api, admin, www, register, central ...), unique |\n| `name` | required | string | max 255 |\n| `currency` | required | ISO code | one of the supported currencies (e.g. MYR); fixed after sign-up |\n| `timezone` | required | IANA name | e.g. Asia/Kuala_Lumpur; used for report day boundaries |\n| `admin_name` | required | string | max 255 |\n| `admin_email` | required | email | max 255; stored lowercase |\n| `password` | required | string | min 8 chars |\n"
           }
         },
         {
@@ -138,7 +151,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Stores the token in `{{token}}`.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `email` | required | email | max 255 |\n| `password` | required | string | max 255 |\n"
           }
         },
         {
@@ -239,13 +253,14 @@
             "url": "{{base_url}}/events/{{slug}}/checkout",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }]\n}",
+              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }],\n  \"promo_code\": \"EARLYBIRD\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Header `Idempotency-Key` (optional, 8-100 chars `A-Za-z0-9_-:.`): same key + same body (promo code included) replays the order; a different body is `idempotency_key_reused`. Other errors: `insufficient_stock`, `event_sold_out`, `tier_locked` (409). Total = subtotal - discount + fees.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `buyer_name` | required | string | max 255 |\n| `buyer_email` | required | email | max 255; stored lowercase; checkout is limited to 10/min per e-mail |\n| `items` | required | array of 1-20 lines | one line per ticket type, no duplicates, all of the event in the URL |\n| `items[].ticket_type_id` | required | integer | a ticket type of this event |\n| `items[].quantity` | required | integer | 1 to the tier's `max_per_order` |\n| `promo_code` | optional | string, max 50 | any letter case. Takes money off the TICKET subtotal (never below zero); fees stay those of the original prices. Errors: `promo_code_invalid`/`_not_started`/`_expired` (422), `promo_code_exhausted` (409) |\n"
           }
         },
         {
@@ -300,8 +315,14 @@
             "url": "{{base_url}}/webhooks/payments/{{tenant}}",
             "body": {
               "mode": "raw",
-              "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}"
-            }
+              "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Signed by the pre-request script (`X-Signature` = HMAC-SHA256 of the raw body with `{{webhook_secret}}`).\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `id` | required | string, max 100 | provider event id; the same id twice is processed once |\n| `type` | required | `payment.succeeded` / `payment.failed` |  |\n| `payment_reference` | required | string, max 40 | the order's `payment_reference` |\n| `amount` | required for succeeded | integer, minor units (sen) | must equal the order total (discount included) or 422 `amount_mismatch` |\n| `currency` | required for succeeded | 3 letters | must equal the order currency |\n| `occurred_at` | optional | ISO-8601 |  |\n"
           }
         }
       ]
@@ -341,7 +362,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "| field | required | type / units | rules |\n|---|---|---|---|\n| `code` | required | string, max 64 | the code in the QR; trimmed and upper-cased |\n| `gate_name` | optional | string, max 60 | which entrance scanned it |\n"
           }
         },
         {
@@ -518,13 +540,14 @@
             "url": "{{base_url}}/admin/events",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"slug\": \"open-mic-night\",\n  \"description\": \"Local acts, open stage.\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\",\n  \"capacity\": 300\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Creates a draft event.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `title` | required | string | max 255 |\n| `venue_name` | required | string | max 255 |\n| `venue_address` | optional | string | max 500 |\n| `description` | optional | string | max 10000 |\n| `slug` | optional | string | lowercase letters/digits/hyphens, max 120, unique; generated from the title when omitted |\n| `starts_at` | required | ISO-8601 | no offset = tenant timezone |\n| `ends_at` | required | ISO-8601 | after starts_at |\n| `capacity` | optional | integer, tickets | min 1. Event-level limit SHARED by all ticket types (null/omitted = none). Checkout answers `event_sold_out` when it is used up |\n"
           },
           "event": [
             {
@@ -559,13 +582,14 @@
             "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"General\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6\n}",
+              "raw": "{\n  \"name\": \"Regular\",\n  \"description\": \"General admission\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-01T10:00:00\",\n  \"sales_end_at\": \"2027-04-30T23:00:00\",\n  \"sort_order\": 2,\n  \"unlocks_after_ticket_type_id\": null\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "| field | required | type / units | rules |\n|---|---|---|---|\n| `name` | required | string | max 255 |\n| `description` | optional | string | max 5000 |\n| `price_minor` | required | integer, minor units (5000 = RM 50.00) | 0 to 9999999999; no decimals |\n| `quantity` | required | integer, tickets | 1 to 1000000; on update cannot go below sold + held |\n| `max_per_order` | optional | integer | 1 to 100, default 10 |\n| `sales_start_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `sales_end_at` | optional | ISO-8601 | after sales_start_at and not after the event ends; none = until the event ends |\n| `sort_order` | optional | integer | 0 to 65535; default = after the last tier |\n| `unlocks_after_ticket_type_id` | optional | integer (ticket type id) | Tier progression: this tier opens once that tier is sold out (sold + held >= quantity) or its sales ended; until then checkout answers `tier_locked` (409). Must be a tier of the same event, not itself, no loops; null removes it |\n"
           },
           "event": [
             {
@@ -633,13 +657,14 @@
             "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"price_minor\": 8000,\n  \"quantity\": 150\n}",
+              "raw": "{\n  \"name\": \"Regular\",\n  \"description\": \"General admission\",\n  \"price_minor\": 8000,\n  \"quantity\": 150,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-01T10:00:00\",\n  \"sales_end_at\": \"2027-04-30T23:00:00\",\n  \"sort_order\": 2,\n  \"unlocks_after_ticket_type_id\": null\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "PATCH: every field is optional, send only what changes.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `name` | required | string | max 255 |\n| `description` | optional | string | max 5000 |\n| `price_minor` | required | integer, minor units (5000 = RM 50.00) | 0 to 9999999999; no decimals |\n| `quantity` | required | integer, tickets | 1 to 1000000; on update cannot go below sold + held |\n| `max_per_order` | optional | integer | 1 to 100, default 10 |\n| `sales_start_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `sales_end_at` | optional | ISO-8601 | after sales_start_at and not after the event ends; none = until the event ends |\n| `sort_order` | optional | integer | 0 to 65535; default = after the last tier |\n| `unlocks_after_ticket_type_id` | optional | integer (ticket type id) | Tier progression: this tier opens once that tier is sold out (sold + held >= quantity) or its sales ended; until then checkout answers `tier_locked` (409). Must be a tier of the same event, not itself, no loops; null removes it |\n"
           }
         },
         {
@@ -767,8 +792,277 @@
                   "language": "json"
                 }
               }
+            },
+            "description": "Full refund of a `paid` or `refund_pending` order; refused if a ticket was scanned. The refund records what the buyer actually paid (discount applied); the promo code use is not given back.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `reason` | optional | string, max 500 | free text shown on the refund |\n"
+          }
+        },
+        {
+          "name": "Show event (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}",
+            "description": "The event with its ticket types, `capacity` and `capacity_remaining`."
+          }
+        },
+        {
+          "name": "Update event (send only the fields to change)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}",
+            "description": "PATCH: every field is optional, send only what changes. A published event's slug is frozen. `capacity` below the tickets already sold or held is a 422; `null` clears the limit.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `title` | optional | string | max 255 |\n| `venue_name` | optional | string | max 255 |\n| `venue_address` | optional | string | max 500 |\n| `description` | optional | string | max 10000 |\n| `slug` | optional | string | lowercase letters/digits/hyphens, max 120, unique; generated from the title when omitted |\n| `starts_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `ends_at` | optional | ISO-8601 | after starts_at |\n| `capacity` | optional | integer, tickets | min 1. Event-level limit SHARED by all ticket types (null/omitted = none). Checkout answers `event_sold_out` when it is used up |\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"slug\": \"open-mic-night\",\n  \"description\": \"Local acts, open stage.\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\",\n  \"capacity\": 250\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
+        },
+        {
+          "name": "Delete event (only while nothing sold or held)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/events/{{event_id}}"
+          }
+        },
+        {
+          "name": "Promo codes",
+          "item": [
+            {
+              "name": "List promo codes",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/promo-codes?is_active=1&per_page=20",
+                "description": "Query parameters (paginated, newest first).\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `event_id` | optional | integer | filter |\n| `is_active` | optional | boolean | filter |\n| `q` | optional | string, max 40 | code prefix, any case |\n| `per_page` | optional | integer | 1-100 |\n| `page` | optional | integer |  |\n"
+              }
+            },
+            {
+              "name": "Create promo code",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/promo-codes",
+                "description": "Example is a 10 % code. For a fixed code send `\"discount_type\": \"fixed\", \"amount_minor\": 1000` and leave `percent_bps` out.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `code` | required | string, 3-40 | letters, digits, `_` and `-`; stored UPPER-CASE; unique (case-insensitive) |\n| `discount_type` | required | `percent` / `fixed` |  |\n| `percent_bps` | required if percent | integer, basis points (1000 = 10.00 %) | 1 to 10000; not allowed for `fixed`. Half-up integer rounding on the ticket subtotal |\n| `amount_minor` | required if fixed | integer, minor units (sen) | >= 1; not allowed for `percent`. Capped at the ticket subtotal |\n| `event_id` | optional | integer | limit to one event; null/omitted = all events of the tenant |\n| `max_uses` | optional | integer | 1 to 1000000; null/omitted = unlimited. One use per order; given back when an order expires or fails (not on refund) |\n| `starts_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `ends_at` | optional | ISO-8601 | after starts_at |\n| `is_active` | optional | boolean | default true; set false to retire a used code |\n",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"EARLYBIRD\",\n  \"discount_type\": \"percent\",\n  \"percent_bps\": 1000,\n  \"amount_minor\": null,\n  \"event_id\": null,\n  \"max_uses\": 100,\n  \"starts_at\": \"2027-01-01T00:00:00\",\n  \"ends_at\": \"2027-02-01T00:00:00\",\n  \"is_active\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code >= 300) { return; }",
+                      "const d = pm.response.json().data;",
+                      "if (d && d.id) { pm.collectionVariables.set('promo_code_id', String(d.id)); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Show promo code",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/promo-codes/{{promo_code_id}}"
+              }
+            },
+            {
+              "name": "Update promo code (send only the fields to change)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/promo-codes/{{promo_code_id}}",
+                "description": "PATCH: every field is optional. Switching `discount_type` needs the matching value in the same request. `max_uses` cannot be below `used` (409 `max_uses_below_used`).\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `code` | optional | string, 3-40 | letters, digits, `_` and `-`; stored UPPER-CASE; unique (case-insensitive) |\n| `discount_type` | optional | `percent` / `fixed` |  |\n| `percent_bps` | optional | integer, basis points (1000 = 10.00 %) | 1 to 10000; not allowed for `fixed`. Half-up integer rounding on the ticket subtotal |\n| `amount_minor` | optional | integer, minor units (sen) | >= 1; not allowed for `percent`. Capped at the ticket subtotal |\n| `event_id` | optional | integer | limit to one event; null/omitted = all events of the tenant |\n| `max_uses` | optional | integer | 1 to 1000000; null/omitted = unlimited. One use per order; given back when an order expires or fails (not on refund) |\n| `starts_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `ends_at` | optional | ISO-8601 | after starts_at |\n| `is_active` | optional | boolean | default true; set false to retire a used code |\n",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"EARLYBIRD\",\n  \"discount_type\": \"fixed\",\n  \"percent_bps\": null,\n  \"amount_minor\": 1000,\n  \"event_id\": null,\n  \"max_uses\": 200,\n  \"starts_at\": \"2027-01-01T00:00:00\",\n  \"ends_at\": \"2027-02-01T00:00:00\",\n  \"is_active\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete promo code (only while used = 0)",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/promo-codes/{{promo_code_id}}",
+                "description": "Answers 409 `promo_code_in_use` once any use was taken: PATCH `is_active=false` instead."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Attendee exports",
+          "item": [
+            {
+              "name": "Request an attendee CSV export",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/events/{{event_id}}/attendee-exports",
+                "description": "No body. Answers 202; a queued job writes the CSV and e-mails you a signed download link (30 minutes). Poll **Export status**."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code >= 300) { return; }",
+                      "const d = pm.response.json().data;",
+                      "if (d && d.id) { pm.collectionVariables.set('export_id', String(d.id)); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Export status (with download_url when ready)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Tenant-ID",
+                    "value": "{{tenant}}"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/admin/attendee-exports/{{export_id}}",
+                "description": "`status`: pending, processing, ready, failed. When `ready` the response carries a fresh temporary signed `download_url`."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code >= 300) { return; }",
+                      "const d = pm.response.json().data;",
+                      "if (d && d.download_url) { pm.collectionVariables.set('export_download_url', d.download_url); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Download the CSV (signed link, no login)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "text/csv"
+                  }
+                ],
+                "url": "{{export_download_url}}",
+                "description": "Uses the signed URL stored by **Export status**; no token or tenant header needed (the tenant is in the path). Invalid or expired: 403 `invalid_signature`."
+              }
+            }
+          ]
         }
       ]
     }

@@ -82,6 +82,8 @@ The table is created by a tenant migration only; Sanctum's own migration is neve
 | starts_at, ends_at | timestamptz | stored in UTC, shown in the tenant timezone |
 | status | varchar(20) | `draft` / `published` / `cancelled` |
 | published_at, cancelled_at | timestamptz null | |
+| capacity | int null | event-level capacity SHARED by all ticket types; null = no event limit |
+| reserved | int | sold + held over all the event's ticket types; maintained by `TicketStock` ONLY while `capacity` is set (0 otherwise) |
 
 | index / constraint | why |
 |---|---|
@@ -89,6 +91,8 @@ The table is created by a tenant migration only; Sanctum's own migration is neve
 | INDEX (status, starts_at) | public list (published, by start date) and the admin status filter |
 | CHECK status IN (...) | a status outside the enum can never be stored |
 | CHECK ends_at > starts_at | an event cannot end before it starts |
+| CHECK reserved >= 0 | the shared counter can never go negative |
+| CHECK capacity IS NULL OR (capacity >= 1 AND reserved <= capacity) | the last defence of the event-level limit: even a buggy path cannot oversell the event |
 
 The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never stored, so it cannot go stale.
 
@@ -105,6 +109,7 @@ The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never s
 | max_per_order | int | |
 | sales_start_at, sales_end_at | timestamptz null | window; no end means "until the event ends" |
 | sort_order | int | display order |
+| unlocks_after_ticket_type_id | bigint FK -> ticket_types null | tier progression: this tier opens once that tier is sold out or its sales ended; `ON DELETE SET NULL` |
 
 | index / constraint | why |
 |---|---|
@@ -113,6 +118,9 @@ The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never s
 | CHECK quantity >= 0 AND sold >= 0 AND held >= 0 | Postgres has no unsigned integers |
 | CHECK price_minor >= 0, max_per_order >= 1 | no negative prices, at least one ticket per order |
 | CHECK sales_end_at > sales_start_at (when both set) | a window cannot be empty or reversed |
+| INDEX (unlocks_after_ticket_type_id) | the hold UPDATE looks the predecessor up by id; also serves the self-referencing FK (what depends on a tier) |
+| FK unlocks_after_ticket_type_id SET NULL | deleting a predecessor (only possible while unsold) opens its successor instead of blocking |
+| CHECK unlocks_after_ticket_type_id IS NULL OR <> id | a tier cannot wait for itself (longer loops are refused by the request/action under the event lock) |
 | FK event_id RESTRICT | an event with tiers cannot vanish underneath them (the delete action removes tiers explicitly) |
 
 The sales status (`on_sale` / `upcoming` / `ended` / `sold_out` / ...) is computed on read from the window, the
@@ -132,7 +140,9 @@ never recomputed from `ticket_types` or the tenant settings.
 | payment_reference | varchar(40) | what the payment provider quotes in its webhook (`pay_` + 12 random chars); the webhook finds the order by it |
 | status | varchar(20) | `pending` / `paid` / `failed` / `expired` / `refund_pending` / `refunded`; written ONLY by `OrderStateMachine` |
 | currency | char(3) | tenant currency at purchase time |
-| subtotal_minor, fee_minor, total_minor | bigint | integer minor units |
+| subtotal_minor, discount_minor, fee_minor, total_minor | bigint | integer minor units; total = subtotal - discount + fee. `discount_minor` is the promo code discount on the ticket subtotal (0 without a code) |
+| promo_code_id | bigint FK -> promo_codes null | the code used; `ON DELETE SET NULL` |
+| promo_code | varchar(40) null | snapshot of the code text (survives rename/delete) |
 | fee_percent_bps, fee_fixed_minor | int | the fee settings used, kept for audit and refunds |
 | expires_at | timestamptz | end of the hold |
 | paid_at, failed_at, expired_at, refund_pending_at, refunded_at | timestamptz null | stamped by the matching transition |
@@ -148,7 +158,9 @@ never recomputed from `ticket_types` or the tenant settings.
 | INDEX (buyer_email) | orders of one buyer |
 | PARTIAL INDEX (expires_at) WHERE status = 'pending' | the expiry job only looks at pending orders: a tiny, always-hot index |
 | CHECK status IN (...) | a status outside the enum can never be stored |
-| CHECK total = subtotal + fee, no negatives | the money of an order always adds up |
+| CHECK total = subtotal - discount + fee, no negatives, discount <= subtotal | the money of an order always adds up and a discount can never push the total below the fees |
+| CHECK discount = 0 OR promo_code IS NOT NULL | a discount always names its code |
+| INDEX (promo_code_id) | orders that used a code: giving the use back on expiry, "who used this code", and the FK |
 | CHECK buyer_email = lower(buyer_email) | one e-mail, one spelling |
 
 ### `order_items` (tenant database)
@@ -250,6 +262,53 @@ One row per refunded order, created in the same transaction that moves the order
 | INDEX (created_at) | reports group refunds by the day they happened |
 | INDEX (refunded_by) | serves the FK |
 | CHECK amount_minor >= 0 | no negative refunds |
+
+### `promo_codes` (tenant database)
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| code | varchar(40) | stored UPPERCASE; the buyer types it in any case |
+| discount_type | varchar(10) | `percent` / `fixed` (enum `PromoDiscountType`) |
+| percent_bps | int null | 1..10000, set when percent (1000 = 10.00 %) |
+| amount_minor | bigint null | > 0, set when fixed (minor units) |
+| event_id | bigint FK -> events null | `ON DELETE CASCADE`; null = every event of the tenant |
+| max_uses | int null | null = unlimited |
+| used | int | uses taken by orders; changed ONLY by atomic conditional UPDATE (`PromoRedemption`) |
+| starts_at, ends_at | timestamptz null | validity window |
+| is_active | boolean | admin switch (a used code is retired with this, not deleted) |
+
+| index / constraint | why |
+|---|---|
+| UNIQUE (code) | checkout looks a code up by its text; two codes can never share one, even when two admins race |
+| INDEX (event_id) | codes of one event (admin filter) and the FK |
+| CHECK code = upper(code) | case-variants of one code cannot become two |
+| CHECK used >= 0 | the counter cannot go negative |
+| CHECK max_uses IS NULL OR (max_uses >= 1 AND used <= max_uses) | the last defence against over-redeeming a code |
+| CHECK type/value pairing | percent has `percent_bps` 1..10000 and no amount; fixed has `amount_minor` > 0 and no percent |
+| CHECK ends_at > starts_at (when both set) | a window cannot be empty or reversed |
+
+### `attendee_exports` (tenant database)
+
+One row per queued CSV export of an event's attendees.
+
+| column | type | notes |
+|---|---|---|
+| id | bigint PK | |
+| event_id | bigint FK -> events | `ON DELETE CASCADE` |
+| requested_by | bigint FK -> users null | the admin who asked (gets the e-mail); `SET NULL` |
+| status | varchar(20) | `pending` / `processing` / `ready` / `failed` (enum `ExportStatus`) |
+| path | varchar null | `exports/{tenant id}/{uuid}.csv` on the `exports` disk (built by `TenantStorage`) |
+| row_count | int null | data rows written |
+| error | text null | why it failed |
+| completed_at | timestamptz null | |
+
+| index / constraint | why |
+|---|---|
+| INDEX (event_id, id) | exports of an event, newest first; also serves the FK |
+| INDEX (requested_by) | serves the FK |
+| CHECK status IN (...) | a status outside the enum can never be stored |
+| CHECK status <> 'ready' OR (path IS NOT NULL AND row_count IS NOT NULL) | a ready export always has a file to serve |
 
 ### Reporting indexes (tenant database)
 
