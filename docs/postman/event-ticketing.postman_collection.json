@@ -81,7 +81,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Create a new tenant (organizer) and its first admin user. No `X-Tenant-ID` header.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| tenant_id | required | string | 3-30 chars; lowercase letters, numbers, hyphen; must start and end with a letter or number; not reserved (e.g. api, admin, www); must be unique |\n| name | required | string | max 255 |\n| currency | required | string | one of the currencies in config/currencies (e.g. MYR) |\n| timezone | required | string | valid timezone name, e.g. Asia/Kuala_Lumpur |\n| admin_name | required | string | max 255 |\n| admin_email | required | string | valid email, max 255 (saved in lowercase) |\n| password | required | string | min 8 characters (Laravel password rules) |\n"
           }
         },
         {
@@ -138,7 +139,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Log in and get an API token.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| email | required | string | valid email, max 255 |\n| password | required | string | max 255 |\n"
           }
         },
         {
@@ -239,13 +241,14 @@
             "url": "{{base_url}}/events/{{slug}}/checkout",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }]\n}",
+              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [\n    {\n      \"ticket_type_id\": {{ticket_type_id}},\n      \"quantity\": 2\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Buy tickets for an event. Money is not sent here: prices come from the ticket types (in sen; 5000 = RM 50.00).\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| buyer_name | required | string | max 255 |\n| buyer_email | required | string | valid email, max 255 (saved in lowercase) |\n| items | required | array | 1 to 20 items; each ticket_type_id may appear only once |\n| items[].ticket_type_id | required | integer | min 1; must be a ticket type of this event |\n| items[].quantity | required | integer | min 1, max 100 (the ticket type max_per_order may be lower) |\n\nOptional header (not in the body): `Idempotency-Key` - 8 to 100 characters, only letters, numbers and `_ - : .`. Send the same key again to safely retry the same checkout."
           }
         },
         {
@@ -278,7 +281,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const body = pm.request.body.raw;",
+                  "const body = pm.variables.replaceIn(pm.request.body.raw);",
+                  "pm.request.body.update(body);",
                   "const sig = CryptoJS.HmacSHA256(body, pm.collectionVariables.get('webhook_secret')).toString();",
                   "pm.request.headers.upsert({ key: 'X-Signature', value: sig });"
                 ]
@@ -301,7 +305,8 @@
             "body": {
               "mode": "raw",
               "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}"
-            }
+            },
+            "description": "Payment provider notification. Signed by the pre-request script (`X-Signature`). Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| id | required | string | max 100; unique per notification (duplicates are ignored) |\n| type | required | string | `payment.succeeded` or `payment.failed` |\n| payment_reference | required | string | max 40 |\n| amount | required if succeeded, else optional | integer, sen | min 0; must match the order total (5000 = RM 50.00) |\n| currency | required if succeeded, else optional | string | exactly 3 letters, e.g. MYR |\n| occurred_at | optional | date-time | ISO 8601, e.g. 2026-11-20T10:15:00Z |\n"
           }
         }
       ]
@@ -341,7 +346,8 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Check in one ticket at the door.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| code | required | string | ticket code, max 64 |\n| gate_name | optional | string | max 60; can be null |\n"
           }
         },
         {
@@ -518,13 +524,14 @@
             "url": "{{base_url}}/admin/events",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\"\n}",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"slug\": \"open-mic-night-{{$timestamp}}\",\n  \"description\": \"An evening of live music, poetry and comedy. Doors open at 7:30 PM.\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00+08:00\",\n  \"ends_at\": \"2027-05-01T23:00:00+08:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Create an event (starts as a draft).\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| title | required | string | max 255 |\n| slug | optional | string | max 120; lowercase letters, numbers and single hyphens (e.g. open-mic-night); must be unique. If empty, it is made from the title. Cannot change after the event is published The example adds {{$timestamp}} so it is unique each run; delete the slug line to let the API make one from the title. |\n| description | optional | string | max 10000; can be null |\n| venue_name | required | string | max 255 |\n| venue_address | optional | string | max 500; can be null |\n| starts_at | required | date-time | ISO 8601 with offset, e.g. 2027-05-01T20:00:00+08:00 |\n| ends_at | required | date-time | ISO 8601 with offset; must be after starts_at |\n"
           },
           "event": [
             {
@@ -559,13 +566,14 @@
             "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"General\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6\n}",
+              "raw": "{\n  \"name\": \"General\",\n  \"description\": \"General admission, standing.\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-15T09:00:00+08:00\",\n  \"sales_end_at\": \"2027-05-01T19:00:00+08:00\",\n  \"sort_order\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Add a ticket type to an event. Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| name | required | string | max 255 |\n| description | optional | string | max 5000; can be null |\n| price_minor | required | integer, sen | 0 to 9999999999. 5000 = RM 50.00. Whole numbers only (no decimals, no text) |\n| quantity | required | integer | 1 to 1000000. Cannot be lower than tickets already sold + held |\n| max_per_order | optional | integer | 1 to 100; most tickets one order can buy. Default 10 if empty (cannot be null on update) |\n| sales_start_at | optional | date-time | ISO 8601 with offset; can be null; must be before sales_end_at and before the event ends_at |\n| sales_end_at | optional | date-time | ISO 8601 with offset; can be null; must be after sales_start_at and not later than the event ends_at |\n| sort_order | optional | integer | 0 to 65535; display order (cannot be null on update) |\n"
           },
           "event": [
             {
@@ -633,13 +641,14 @@
             "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"price_minor\": 8000,\n  \"quantity\": 150\n}",
+              "raw": "{\n  \"name\": \"General\",\n  \"description\": \"General admission, standing.\",\n  \"price_minor\": 8000,\n  \"quantity\": 150,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-15T09:00:00+08:00\",\n  \"sales_end_at\": \"2027-05-01T19:00:00+08:00\",\n  \"sort_order\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Change a ticket type. All fields are optional: send ONLY the fields you want to change. Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| name | optional | string | max 255 |\n| description | optional | string | max 5000; can be null |\n| price_minor | optional | integer, sen | 0 to 9999999999. 5000 = RM 50.00. Whole numbers only (no decimals, no text) |\n| quantity | optional | integer | 1 to 1000000. Cannot be lower than tickets already sold + held |\n| max_per_order | optional | integer | 1 to 100; most tickets one order can buy. Default 10 if empty (cannot be null on update) |\n| sales_start_at | optional | date-time | ISO 8601 with offset; can be null; must be before sales_end_at and before the event ends_at |\n| sales_end_at | optional | date-time | ISO 8601 with offset; can be null; must be after sales_start_at and not later than the event ends_at |\n| sort_order | optional | integer | 0 to 65535; display order (cannot be null on update) |\n"
           }
         },
         {
@@ -761,13 +770,14 @@
             "url": "{{base_url}}/admin/orders/{{reference}}/refund",
             "body": {
               "mode": "raw",
-              "raw": "{ \"reason\": \"Buyer asked\" }",
+              "raw": "{\n  \"reason\": \"Buyer asked\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Refund one order.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| reason | optional | string | max 500; can be null |\n"
           }
         }
       ]
