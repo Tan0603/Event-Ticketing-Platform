@@ -312,7 +312,8 @@ class BulkSeeder extends Seeder
                FROM orders o
                JOIN order_items oi ON oi.order_id = o.id
                CROSS JOIN LATERAL generate_series(1, oi.quantity) AS g(seq)
-              WHERE o.status IN ('paid', 'refunded')",
+              WHERE o.status IN ('paid', 'refunded') AND o.event_id IN (SELECT id FROM events WHERE slug LIKE ?)",
+            [self::SLUG_PREFIX.'%'],
         );
     }
 
@@ -322,8 +323,8 @@ class BulkSeeder extends Seeder
 
         DB::statement(
             "INSERT INTO refunds (order_id, amount_minor, currency, reason, refunded_by, created_at, updated_at)
-             SELECT id, total_minor, currency, 'Buyer request', ?, refunded_at, refunded_at FROM orders WHERE status = 'refunded'",
-            [$admin],
+             SELECT id, total_minor, currency, 'Buyer request', ?, refunded_at, refunded_at FROM orders WHERE status = 'refunded' AND event_id IN (SELECT id FROM events WHERE slug LIKE ?)",
+            [$admin, self::SLUG_PREFIX.'%'],
         );
     }
 
@@ -335,11 +336,16 @@ class BulkSeeder extends Seeder
         DB::statement(
             "UPDATE ticket_types tt SET
                 sold = COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.ticket_type_id = tt.id AND o.status = 'paid'), 0),
-                held = COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.ticket_type_id = tt.id AND o.status = 'pending' AND o.expires_at > ?::timestamptz), 0)",
-            [$now],
+                held = COALESCE((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.ticket_type_id = tt.id AND o.status = 'pending' AND o.expires_at > ?::timestamptz), 0)
+              WHERE tt.event_id IN (SELECT id FROM events WHERE slug LIKE ?)",
+            [$now, self::SLUG_PREFIX.'%'],
         );
         // Capacity: a tenth of the tiers are sold out, the rest keep some room.
-        DB::statement('UPDATE ticket_types SET quantity = GREATEST(1, sold + held + CASE WHEN random() < 0.1 THEN 0 ELSE 5 + floor(random() * 200)::int END)');
+        DB::statement(
+            'UPDATE ticket_types SET quantity = GREATEST(1, sold + held + CASE WHEN random() < 0.1 THEN 0 ELSE 5 + floor(random() * 200)::int END)
+              WHERE event_id IN (SELECT id FROM events WHERE slug LIKE ?)',
+            [self::SLUG_PREFIX.'%'],
+        );
     }
 
     /** About 80 % of the valid tickets of events that are over walked in. */
@@ -358,8 +364,8 @@ class BulkSeeder extends Seeder
                     gate_name = (ARRAY['Gate A', 'Gate B', 'Gate C'])[1 + floor(random() * 3)::int],
                     updated_at = e.ends_at
                FROM events e
-              WHERE e.id = t.event_id AND e.ends_at < ?::timestamptz AND t.status = 'valid' AND random() < 0.8",
-            [$door->id, $now],
+              WHERE e.id = t.event_id AND e.slug LIKE ? AND e.ends_at < ?::timestamptz AND t.status = 'valid' AND random() < 0.8",
+            [$door->id, self::SLUG_PREFIX.'%', $now],
         );
     }
 }
