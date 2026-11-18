@@ -51,22 +51,6 @@ Check this list at the end of every phase:
 - A payment message is accepted without checking its signature
 - A background job runs for the wrong organizer
 
----
-
-## Daily schedule
-
-| Day | Date | What to finish |
-|---|---|---|
-| 1 | Tue 17 Nov | Phase 0 Setup · Phase 1 Organizer separation · Phase 2 Sign-up |
-| 2 | Wed 18 Nov | Phase 3 Login · Phase 4 Events & tickets · Phase 5 Public shop |
-| 3 | Thu 19 Nov | Phase 6 Checkout · Phase 7 Payments |
-| 4 | Fri 20 Nov | Phase 8 Tickets & email · Phase 9 Timers · Phase 10 Check-in · Phase 11 Refunds |
-| 5 | Sat 21 Nov | Phase 12 Reports · Phase 13 Test data & speed |
-| 6 | Sun 22 Nov | Phase 14 Documents · Phase 15 Extras |
-| 7 | Mon 23 Nov | Spare time, final check, **review day** |
-
----
-
 ## Phase 0 — Set up the project
 
 **What we're doing:** Get an empty Laravel project running, with all the tools we need.
