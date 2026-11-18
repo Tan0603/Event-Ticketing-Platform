@@ -28,13 +28,13 @@ Ordered by priority. Tick each one off here when it's merged.
 
 | # | Problem | Why it matters | Where |
 |---|---|---|---|
-| 1 | [ ] Sales status says `upcoming` before sales open, but the PDF calls it **`scheduled`** | A reviewer checking statuses against the PDF will see a mismatch | `app/Enums/SalesStatus.php` + tests |
-| 2 | [ ] README shows the **old fee formula** (per order, example 10550) and the **old webhook URL and body** | Reviewers follow the README; the code now uses per-ticket fees and `/api/webhooks/payments/{tenant}` | `README.md` "Fees" and webhook sections |
-| 3 | [ ] README Assumption says a late payment with no stock "stays expired"; the code now moves it to **`refund_pending`** | The written rule contradicts the behaviour | `README.md` Assumptions |
-| 4 | [ ] `.env.example` has `APP_URL=http://localhost`, but the app runs on port **8088** | The ticket link in the email doesn't open in Docker | `.env.example` |
-| 5 | [ ] The bulk seeder **crashes on an organizer that already has orders** (duplicate ticket error) | Running it on `demo-org` after a demo fails | `database/seeders/Tenant/BulkSeeder.php` (`createTickets()` must only touch bulk orders) |
-| 6 | [ ] Field names differ from the PDF (`sales_start_at` / `sales_end_at` / `price_minor` vs `sales_starts_at` / `sales_ends_at` / `price`) and this isn't written down | Small, but should be an Assumption | `README.md` Assumptions |
-| 7 | [ ] A "not found" error shows the internal class name (e.g. `App\Models\Event`) | Leaks internals; looks unpolished | `app/Exceptions/ApiErrors.php` (Laravel turns the model miss into a plain 404 that keeps the class name in its message) |
+| 1 | [x] Sales status says `upcoming` before sales open, but the PDF calls it **`scheduled`** | A reviewer checking statuses against the PDF will see a mismatch | `app/Enums/SalesStatus.php` + tests |
+| 2 | [x] README shows the **old fee formula** (per order, example 10550) and the **old webhook URL and body** | Reviewers follow the README; the code now uses per-ticket fees and `/api/webhooks/payments/{tenant}` | `README.md` "Fees" and webhook sections |
+| 3 | [x] README Assumption says a late payment with no stock "stays expired"; the code now moves it to **`refund_pending`** | The written rule contradicts the behaviour | `README.md` Assumptions |
+| 4 | [x] `.env.example` has `APP_URL=http://localhost`, but the app runs on port **8088** | The ticket link in the email doesn't open in Docker | `.env.example` |
+| 5 | [x] The bulk seeder **crashes on an organizer that already has orders** (duplicate ticket error) | Running it on `demo-org` after a demo fails | `database/seeders/Tenant/BulkSeeder.php` (`createTickets()` must only touch bulk orders) |
+| 6 | [x] Field names differ from the PDF (`sales_start_at` / `sales_end_at` / `price_minor` vs `sales_starts_at` / `sales_ends_at` / `price`) and this isn't written down | Small, but should be an Assumption | `README.md` Assumptions |
+| 7 | [x] A "not found" error shows the internal class name (e.g. `App\Models\Event`) | Leaks internals; looks unpolished | `app/Exceptions/ApiErrors.php` (Laravel turns the model miss into a plain 404 that keeps the class name in its message) |
 
 ### Done since the first plan
 
