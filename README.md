@@ -306,7 +306,7 @@ holds can lag by up to the TTL.
 ## Load data (spec section 18)
 
 `php artisan demo:seed-bulk alpha-events beta-tickets` (tenants must exist and be active; `tenant:provision` them first)
-loads, per tenant, 40 events (past, live, upcoming, a few drafts/cancelled), 3-5 ticket types each, 30 000 orders in every
+loads, per tenant, 40 events (always at least one published past, live and upcoming event, plus a few drafts/cancelled), 3-5 ticket types each, 30 000 orders in every
 status, about 93 000 tickets, refunds, and check-ins for about 80 % of the tickets of past events. Options:
 `--events=30..50`, `--orders=20000..50000`, `--seed`. It takes about 25-30 s per tenant because it writes in bulk: orders and
 order lines in chunks of 1 000 rows; tickets, refunds, check-ins and the stock counters as set-based SQL in PostgreSQL. It does
