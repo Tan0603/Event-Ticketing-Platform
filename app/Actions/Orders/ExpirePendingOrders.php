@@ -2,8 +2,8 @@
 
 namespace App\Actions\Orders;
 
+use App\Domain\Inventory\EventLock;
 use App\Enums\OrderStatus;
-use App\Models\Tenant\Event;
 use App\Models\Tenant\Order;
 use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
@@ -59,7 +59,7 @@ class ExpirePendingOrders
                 return false;
             }
 
-            Event::query()->sharedLock()->findOrFail($known->event_id);
+            EventLock::acquire($known->event_id);
             /** @var Order $order */
             $order = Order::query()->lockForUpdate()->with('items')->findOrFail($orderId);
 

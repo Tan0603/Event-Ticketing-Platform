@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 class UpdateEvent
 {
     /**
-     * @param  array<string, mixed>  $attributes  only the keys the client sent (title, slug, description, venue_name, venue_address, starts_at, ends_at)
+     * @param  array<string, mixed>  $attributes  only the keys the client sent (title, slug, description, venue_name, venue_address, starts_at, ends_at, capacity)
      */
     public function execute(Event $event, array $attributes): Event
     {
@@ -30,7 +30,11 @@ class UpdateEvent
                 throw new BusinessRuleException('slug_locked', 'The slug of a published event cannot change: its public link would break.');
             }
 
+            $capacityChanged = array_key_exists('capacity', $attributes);
             $locked->fill($attributes);
+            if ($capacityChanged) {
+                $this->applyCapacity($locked);
+            }
 
             if ($locked->ends_at->lte($locked->starts_at)) {
                 throw ValidationException::withMessages(['ends_at' => ['The end must be after the start.']]);
@@ -52,5 +56,27 @@ class UpdateEvent
 
             return $locked;
         });
+    }
+
+    /**
+     * Set or clear the shared capacity. The event row is locked FOR UPDATE, so no checkout, payment or expiry of this
+     * event is running: `reserved` is recomputed from the ticket types in one SQL aggregate and the new capacity may
+     * not be below it. Clearing the capacity zeroes the counter (it is only maintained while a capacity is set).
+     */
+    private function applyCapacity(Event $event): void
+    {
+        if ($event->capacity === null) {
+            $event->forceFill(['reserved' => 0]);
+
+            return;
+        }
+
+        $reserved = (int) DB::table('ticket_types')->where('event_id', $event->id)->selectRaw('COALESCE(SUM(sold + held), 0) AS reserved')->value('reserved');
+
+        if ($event->capacity < $reserved) {
+            throw ValidationException::withMessages(['capacity' => ["The capacity cannot be lower than the {$reserved} tickets already sold or held."]]);
+        }
+
+        $event->forceFill(['reserved' => $reserved]);
     }
 }

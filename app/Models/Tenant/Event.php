@@ -22,19 +22,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property EventStatus $status
  * @property CarbonInterface|null $published_at
  * @property CarbonInterface|null $cancelled_at
+ * @property int|null $capacity shared by all ticket types; null = no event limit
+ * @property int $reserved sold + held of all ticket types (maintained only while capacity is set)
  */
 class Event extends Model
 {
     /** @use HasFactory<EventFactory> */
     use HasFactory;
 
-    protected $fillable = ['title', 'slug', 'description', 'venue_name', 'venue_address', 'starts_at', 'ends_at'];
+    protected $fillable = ['title', 'slug', 'description', 'venue_name', 'venue_address', 'starts_at', 'ends_at', 'capacity'];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'status' => EventStatus::class,
+            'capacity' => 'integer',
+            'reserved' => 'integer',
             'starts_at' => 'immutable_datetime',
             'ends_at' => 'immutable_datetime',
             'published_at' => 'immutable_datetime',
@@ -45,7 +49,13 @@ class Event extends Model
     /** @return HasMany<TicketType, $this> */
     public function ticketTypes(): HasMany
     {
-        return $this->hasMany(TicketType::class)->chaperone()->orderBy('sort_order')->orderBy('id');
+        return $this->hasMany(TicketType::class)->chaperone()->with('unlocksAfter')->orderBy('sort_order')->orderBy('id');
+    }
+
+    /** Room left in the shared event capacity, or null when the event has no limit. */
+    public function capacityRemaining(): ?int
+    {
+        return $this->capacity === null ? null : max(0, $this->capacity - $this->reserved);
     }
 
     public function timing(?CarbonInterface $now = null): EventTiming

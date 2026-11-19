@@ -38,6 +38,15 @@ return [
             'report' => false,
         ],
 
+        // Tenant exports. Not one of the tenancy-suffixed disks: every path is built by TenantStorage and starts
+        // with exports/{tenant id}/, which is what keeps tenants apart.
+        'exports' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private'),
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

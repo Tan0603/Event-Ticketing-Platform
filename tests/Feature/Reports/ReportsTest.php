@@ -80,7 +80,7 @@ describe('sales by day', function () {
             // the refunded order stays a sale on Jan 4 and shows up as a refund on Jan 6
             ->and($days['2027-01-06'])->toMatchArray(['orders_paid' => 0, 'gross_minor' => 0, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => -10600])
             ->and($days['2027-01-07']['orders_paid'])->toBe(0)
-            ->and($report['totals'])->toBe(['orders_paid' => 3, 'tickets_sold' => 4, 'revenue_minor' => 27000, 'gross_minor' => 28550, 'fees_minor' => 1550, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => 17950]);
+            ->and($report['totals'])->toBe(['orders_paid' => 3, 'tickets_sold' => 4, 'revenue_minor' => 27000, 'gross_minor' => 28550, 'fees_minor' => 1550, 'discounts_minor' => 0, 'refunds' => 1, 'refunded_minor' => 10600, 'net_minor' => 17950]);
     });
 
     it('leaves out pending orders and days outside the range', function () {
@@ -175,7 +175,7 @@ describe('event report', function () {
         $data = $this->getJson("/api/admin/events/{$this->event->id}/report", $this->admin)->assertOk()->json('data');
         $types = collect($data['ticket_types'])->keyBy('name');
 
-        expect($data['event'])->toBe(['id' => $this->event->id, 'title' => 'Sunset Fest', 'status' => 'published'])
+        expect($data['event'])->toBe(['id' => $this->event->id, 'title' => 'Sunset Fest', 'status' => 'published', 'capacity' => null, 'capacity_remaining' => null])
             ->and($types['General'])->toMatchArray(['capacity' => 50, 'sold' => 1, 'held' => 1, 'available' => 48, 'gross_minor' => 15000, 'refunded_minor' => 10000, 'net_minor' => 5000, 'checked_in' => 0, 'awaiting_check_in' => 1, 'void' => 2])
             ->and($types['VIP'])->toMatchArray(['capacity' => 10, 'sold' => 1, 'gross_minor' => 12000, 'refunded_minor' => 0, 'net_minor' => 12000, 'checked_in' => 1, 'awaiting_check_in' => 0, 'void' => 0])
             ->and($data['totals'])->toMatchArray(['capacity' => 60, 'sold' => 2, 'held' => 1, 'gross_minor' => 27000, 'refunded_minor' => 10000, 'net_minor' => 17000, 'fees_minor' => 950, 'checked_in' => 1, 'awaiting_check_in' => 1, 'void' => 2])

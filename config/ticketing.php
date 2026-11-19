@@ -42,10 +42,19 @@ return [
         'login_per_minute' => (int) env('TICKETING_LOGIN_RATE_LIMIT', 5),
         'checkin_per_minute' => (int) env('TICKETING_CHECKIN_RATE_LIMIT', 120),
         'webhook_per_minute' => (int) env('TICKETING_WEBHOOK_RATE_LIMIT', 300),
+        'export_per_minute' => (int) env('TICKETING_EXPORT_RATE_LIMIT', 10),
     ],
 
     // How long the signed links in e-mails (online tickets, QR images) keep working.
     'ticket_link_days' => (int) env('TICKETING_TICKET_LINK_DAYS', 30),
+
+    // Attendee CSV exports (queued, stored on the `exports` disk under exports/{tenant id}/).
+    'exports' => [
+        'disk' => env('TICKETING_EXPORT_DISK', 'exports'),
+        'link_minutes' => (int) env('TICKETING_EXPORT_LINK_MINUTES', 30), // how long a signed download link works
+        'chunk_size' => 1000,       // tickets read per query while streaming the CSV
+        'memory_bytes' => 1048576,  // the CSV buffers in memory up to this size, then spills to a temp file
+    ],
 
     'reminder_hours_before' => 24,
 

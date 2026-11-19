@@ -3,9 +3,9 @@
 namespace App\Actions\Payments;
 
 use App\Actions\Orders\ReleaseOrder;
+use App\Domain\Inventory\EventLock;
 use App\Domain\Orders\OrderStateMachine;
 use App\Enums\OrderStatus;
-use App\Models\Tenant\Event;
 use App\Models\Tenant\Order;
 use App\Support\StorefrontCache;
 use Illuminate\Support\Facades\DB;
@@ -71,7 +71,7 @@ class ProcessPaymentWebhook
         $reference = $known->reference;
 
         // Lock order: event (shared) -> order -> ticket types (inside the actions below).
-        Event::query()->sharedLock()->findOrFail($known->event_id);
+        EventLock::acquire($known->event_id);
         /** @var Order $order */
         $order = Order::query()->lockForUpdate()->with('items')->findOrFail($known->id);
 

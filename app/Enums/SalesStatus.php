@@ -13,6 +13,8 @@ enum SalesStatus: string
     case OnSale = 'on_sale';
     case SoldOut = 'sold_out';
     case Ended = 'ended';
+    /** Waits for the previous tier (tier progression) to sell out or end. */
+    case Locked = 'locked';
 
     /**
      * The single place that decides a tier's sales status, shared by the admin API (live rows) and the
@@ -24,6 +26,7 @@ enum SalesStatus: string
         CarbonInterface $effectiveSalesEnd,
         int $available,
         CarbonInterface $now,
+        bool $locked = false,
     ): self {
         return match (true) {
             $eventStatus === EventStatus::Cancelled => self::Cancelled,
@@ -31,6 +34,7 @@ enum SalesStatus: string
             $salesStart !== null && $now->lt($salesStart) => self::Scheduled,
             $now->gte($effectiveSalesEnd) => self::Ended,
             $available <= 0 => self::SoldOut,
+            $locked => self::Locked,
             default => self::OnSale,
         };
     }
