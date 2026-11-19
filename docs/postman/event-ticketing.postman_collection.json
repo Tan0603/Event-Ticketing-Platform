@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Event Ticketing Platform",
-    "description": "Multi-tenant ticketing API. Set the collection variables `base_url` and `tenant`, run `Auth > Login` once (it stores `token`), then use the rest. Webhook calls need `webhook_secret` (see Admin > Settings) and the pre-request script signs the body for you. Every POST/PATCH request lists all the fields its FormRequest accepts, with a per-field table (required/optional, units, rules) in its description. Amounts are integer minor units (sen).",
+    "description": "Multi-tenant ticketing API. Two example tenants are built in: `maxis` and `digi`. First run `Sign-up > Register tenant: maxis` and `Register tenant: digi` (once). Then run `Auth > Login as maxis` or `Auth > Login as digi`: it sets `tenant` and `token`, so every other request goes to that tenant. Switch tenant by running the other login. Webhook calls need `webhook_secret` (see Admin > Settings) and the pre-request script signs the body for you. Every POST/PATCH request lists all the fields its FormRequest accepts, with a per-field table (required/optional, units, rules) in its description. Amounts are integer minor units (sen).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,15 +11,15 @@
     },
     {
       "key": "tenant",
-      "value": "demo-org"
+      "value": "maxis"
     },
     {
       "key": "email",
-      "value": "admin@demo.test"
+      "value": "admin@maxis.test"
     },
     {
       "key": "password",
-      "value": "password"
+      "value": "password123"
     },
     {
       "key": "token",
@@ -75,7 +75,7 @@
       "name": "Sign-up (central, no tenant header)",
       "item": [
         {
-          "name": "Register a tenant",
+          "name": "Register tenant: maxis",
           "request": {
             "method": "POST",
             "header": [
@@ -87,7 +87,7 @@
             "url": "{{base_url}}/register",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tenant_id\": \"my-events\",\n  \"name\": \"My Events\",\n  \"currency\": \"MYR\",\n  \"timezone\": \"Asia/Kuala_Lumpur\",\n  \"admin_name\": \"Admin\",\n  \"admin_email\": \"admin@my-events.test\",\n  \"password\": \"a-long-password-1\"\n}",
+              "raw": "{\n  \"tenant_id\": \"maxis\",\n  \"name\": \"Maxis\",\n  \"currency\": \"MYR\",\n  \"timezone\": \"Asia/Kuala_Lumpur\",\n  \"admin_name\": \"Maxis Admin\",\n  \"admin_email\": \"admin@maxis.test\",\n  \"password\": \"password123\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -98,7 +98,30 @@
           }
         },
         {
-          "name": "Registration status",
+          "name": "Register tenant: digi",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"digi\",\n  \"name\": \"Digi\",\n  \"currency\": \"MYR\",\n  \"timezone\": \"Asia/Kuala_Lumpur\",\n  \"admin_name\": \"Digi Admin\",\n  \"admin_email\": \"admin@digi.test\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a new tenant (organizer) and its first admin user. No `X-Tenant-ID` header.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| tenant_id | required | string | 3-30 chars; lowercase letters, numbers, hyphen; must start and end with a letter or number; not reserved (e.g. api, admin, www); must be unique |\n| name | required | string | max 255 |\n| currency | required | string | one of the currencies in config/currencies (e.g. MYR) |\n| timezone | required | string | valid timezone name, e.g. Asia/Kuala_Lumpur |\n| admin_name | required | string | max 255 |\n| admin_email | required | string | valid email, max 255 (saved in lowercase) |\n| password | required | string | min 8 characters (Laravel password rules) |\n"
+          }
+        },
+        {
+          "name": "Registration status: maxis",
           "request": {
             "method": "GET",
             "header": [
@@ -107,7 +130,20 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/register/my-events"
+            "url": "{{base_url}}/register/maxis"
+          }
+        },
+        {
+          "name": "Registration status: digi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/register/digi"
           }
         }
       ]
@@ -116,7 +152,87 @@
       "name": "Auth",
       "item": [
         {
-          "name": "Login",
+          "name": "Login as maxis (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json.token || (json.data && json.data.token);",
+                  "if (token) { pm.collectionVariables.set('token', token); pm.collectionVariables.set('tenant', 'maxis'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "maxis"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@maxis.test\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Log in as the `maxis` admin. On success it saves `token` and sets `tenant` = `maxis`, so all other requests now use this tenant.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| email | required | string | valid email, max 255 |\n| password | required | string | max 255 |\n"
+          }
+        },
+        {
+          "name": "Login as digi (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json.token || (json.data && json.data.token);",
+                  "if (token) { pm.collectionVariables.set('token', token); pm.collectionVariables.set('tenant', 'digi'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "digi"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@digi.test\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Log in as the `digi` admin. On success it saves `token` and sets `tenant` = `digi`, so all other requests now use this tenant.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| email | required | string | valid email, max 255 |\n| password | required | string | max 255 |\n"
+          }
+        },
+        {
+          "name": "Login (uses the tenant / email / password variables)",
           "event": [
             {
               "listen": "test",
