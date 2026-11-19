@@ -302,3 +302,21 @@ describe('access control and isolation', function () {
             ->and($this->tenant->run(fn () => Event::query()->find($eventA->id)->status))->toBe(EventStatus::Published);
     });
 });
+
+describe('not found', function () {
+    it('answers a missing model with a generic 404 that leaks no class names', function () {
+        $response = $this->getJson('/api/admin/events/999999', $this->h)
+            ->assertNotFound()
+            ->assertJsonPath('error', 'not_found')
+            ->assertJsonPath('message', 'Resource not found.');
+
+        expect($response->getContent())->not->toContain('App\\')->not->toContain('No query results');
+    });
+
+    it('answers an unknown route with the same generic 404', function () {
+        $this->getJson('/api/admin/nope', $this->h)
+            ->assertNotFound()
+            ->assertJsonPath('error', 'not_found')
+            ->assertJsonPath('message', 'Resource not found.');
+    });
+});

@@ -123,7 +123,7 @@ The timing phase (`upcoming` / `ongoing` / `ended`) is computed on read, never s
 | CHECK unlocks_after_ticket_type_id IS NULL OR <> id | a tier cannot wait for itself (longer loops are refused by the request/action under the event lock) |
 | FK event_id RESTRICT | an event with tiers cannot vanish underneath them (the delete action removes tiers explicitly) |
 
-The sales status (`on_sale` / `upcoming` / `ended` / `sold_out` / ...) is computed on read from the window, the
+The sales status (`on_sale` / `scheduled` / `ended` / `sold_out` / ...) is computed on read from the window, the
 counters and the event state.
 
 ### `orders` (tenant database)

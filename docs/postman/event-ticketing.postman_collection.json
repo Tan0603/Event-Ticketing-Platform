@@ -94,7 +94,7 @@
                 }
               }
             },
-            "description": "Central route: no `X-Tenant-ID`. Answers 202; poll **Registration status**.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `tenant_id` | required | string | 3-30 chars, lowercase letters/digits/hyphens, not reserved (api, admin, www, register, central ...), unique |\n| `name` | required | string | max 255 |\n| `currency` | required | ISO code | one of the supported currencies (e.g. MYR); fixed after sign-up |\n| `timezone` | required | IANA name | e.g. Asia/Kuala_Lumpur; used for report day boundaries |\n| `admin_name` | required | string | max 255 |\n| `admin_email` | required | email | max 255; stored lowercase |\n| `password` | required | string | min 8 chars |\n"
+            "description": "Create a new tenant (organizer) and its first admin user. No `X-Tenant-ID` header.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| tenant_id | required | string | 3-30 chars; lowercase letters, numbers, hyphen; must start and end with a letter or number; not reserved (e.g. api, admin, www); must be unique |\n| name | required | string | max 255 |\n| currency | required | string | one of the currencies in config/currencies (e.g. MYR) |\n| timezone | required | string | valid timezone name, e.g. Asia/Kuala_Lumpur |\n| admin_name | required | string | max 255 |\n| admin_email | required | string | valid email, max 255 (saved in lowercase) |\n| password | required | string | min 8 characters (Laravel password rules) |\n"
           }
         },
         {
@@ -152,7 +152,7 @@
                 }
               }
             },
-            "description": "Stores the token in `{{token}}`.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `email` | required | email | max 255 |\n| `password` | required | string | max 255 |\n"
+            "description": "Log in and get an API token.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| email | required | string | valid email, max 255 |\n| password | required | string | max 255 |\n"
           }
         },
         {
@@ -253,14 +253,14 @@
             "url": "{{base_url}}/events/{{slug}}/checkout",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [{ \"ticket_type_id\": {{ticket_type_id}}, \"quantity\": 2 }],\n  \"promo_code\": \"EARLYBIRD\"\n}",
+              "raw": "{\n  \"buyer_name\": \"Aisha Rahman\",\n  \"buyer_email\": \"aisha@example.com\",\n  \"items\": [\n    {\n      \"ticket_type_id\": {{ticket_type_id}},\n      \"quantity\": 2\n    }\n  ],\n  \"promo_code\": \"EARLYBIRD\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Header `Idempotency-Key` (optional, 8-100 chars `A-Za-z0-9_-:.`): same key + same body (promo code included) replays the order; a different body is `idempotency_key_reused`. Other errors: `insufficient_stock`, `event_sold_out`, `tier_locked` (409). Total = subtotal - discount + fees.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `buyer_name` | required | string | max 255 |\n| `buyer_email` | required | email | max 255; stored lowercase; checkout is limited to 10/min per e-mail |\n| `items` | required | array of 1-20 lines | one line per ticket type, no duplicates, all of the event in the URL |\n| `items[].ticket_type_id` | required | integer | a ticket type of this event |\n| `items[].quantity` | required | integer | 1 to the tier's `max_per_order` |\n| `promo_code` | optional | string, max 50 | any letter case. Takes money off the TICKET subtotal (never below zero); fees stay those of the original prices. Errors: `promo_code_invalid`/`_not_started`/`_expired` (422), `promo_code_exhausted` (409) |\n"
+            "description": "Buy tickets for an event. Money is not sent here: prices come from the ticket types (in sen; 5000 = RM 50.00).\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| buyer_name | required | string | max 255 |\n| buyer_email | required | string | valid email, max 255 (saved in lowercase) |\n| items | required | array | 1 to 20 items; each ticket_type_id may appear only once |\n| items[].ticket_type_id | required | integer | min 1; must be a ticket type of this event |\n| items[].quantity | required | integer | min 1, max 100 (the ticket type max_per_order may be lower) |\n| promo_code | optional | string | max 50; any letter case. Takes money off the ticket subtotal (never below zero); fees stay on the original prices. Errors: promo_code_invalid / promo_code_not_started / promo_code_expired (422), promo_code_exhausted (409) |\n\nOptional header (not in the body): `Idempotency-Key` - 8 to 100 characters, only letters, numbers and `_ - : .`. Send the same key again to safely retry the same checkout.\n\nOther errors: insufficient_stock, event_sold_out (shared event capacity used up), tier_locked (409, the previous tier is not finished yet). Total = subtotal - discount + fees."
           }
         },
         {
@@ -293,7 +293,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const body = pm.request.body.raw;",
+                  "const body = pm.variables.replaceIn(pm.request.body.raw);",
+                  "pm.request.body.update(body);",
                   "const sig = CryptoJS.HmacSHA256(body, pm.collectionVariables.get('webhook_secret')).toString();",
                   "pm.request.headers.upsert({ key: 'X-Signature', value: sig });"
                 ]
@@ -315,14 +316,9 @@
             "url": "{{base_url}}/webhooks/payments/{{tenant}}",
             "body": {
               "mode": "raw",
-              "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\"id\":\"whk_postman_{{$timestamp}}\",\"type\":\"payment.succeeded\",\"payment_reference\":\"{{payment_reference}}\",\"amount\":{{total_minor}},\"currency\":\"MYR\",\"occurred_at\":\"2026-11-20T10:15:00Z\"}"
             },
-            "description": "Signed by the pre-request script (`X-Signature` = HMAC-SHA256 of the raw body with `{{webhook_secret}}`).\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `id` | required | string, max 100 | provider event id; the same id twice is processed once |\n| `type` | required | `payment.succeeded` / `payment.failed` |  |\n| `payment_reference` | required | string, max 40 | the order's `payment_reference` |\n| `amount` | required for succeeded | integer, minor units (sen) | must equal the order total (discount included) or 422 `amount_mismatch` |\n| `currency` | required for succeeded | 3 letters | must equal the order currency |\n| `occurred_at` | optional | ISO-8601 |  |\n"
+            "description": "Payment provider notification. Signed by the pre-request script (`X-Signature`). Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| id | required | string | max 100; unique per notification (duplicates are ignored) |\n| type | required | string | `payment.succeeded` or `payment.failed` |\n| payment_reference | required | string | max 40 |\n| amount | required if succeeded, else optional | integer, sen | min 0; must match the order total, discount included (5000 = RM 50.00) |\n| currency | required if succeeded, else optional | string | exactly 3 letters, e.g. MYR |\n| occurred_at | optional | date-time | ISO 8601, e.g. 2026-11-20T10:15:00Z |\n"
           }
         }
       ]
@@ -363,7 +359,7 @@
                 }
               }
             },
-            "description": "| field | required | type / units | rules |\n|---|---|---|---|\n| `code` | required | string, max 64 | the code in the QR; trimmed and upper-cased |\n| `gate_name` | optional | string, max 60 | which entrance scanned it |\n"
+            "description": "Check in one ticket at the door.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| code | required | string | ticket code, max 64 |\n| gate_name | optional | string | max 60; can be null |\n"
           }
         },
         {
@@ -540,14 +536,14 @@
             "url": "{{base_url}}/admin/events",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"slug\": \"open-mic-night\",\n  \"description\": \"Local acts, open stage.\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00\",\n  \"ends_at\": \"2027-05-01T23:00:00\",\n  \"capacity\": 300\n}",
+              "raw": "{\n  \"title\": \"Open Mic Night\",\n  \"slug\": \"open-mic-night-{{$timestamp}}\",\n  \"description\": \"An evening of live music, poetry and comedy. Doors open at 7:30 PM.\",\n  \"venue_name\": \"The Loft\",\n  \"venue_address\": \"12 Jalan Loft, Kuala Lumpur\",\n  \"starts_at\": \"2027-05-01T20:00:00+08:00\",\n  \"ends_at\": \"2027-05-01T23:00:00+08:00\",\n  \"capacity\": 300\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Creates a draft event.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `title` | required | string | max 255 |\n| `venue_name` | required | string | max 255 |\n| `venue_address` | optional | string | max 500 |\n| `description` | optional | string | max 10000 |\n| `slug` | optional | string | lowercase letters/digits/hyphens, max 120, unique; generated from the title when omitted |\n| `starts_at` | required | ISO-8601 | no offset = tenant timezone |\n| `ends_at` | required | ISO-8601 | after starts_at |\n| `capacity` | optional | integer, tickets | min 1. Event-level limit SHARED by all ticket types (null/omitted = none). Checkout answers `event_sold_out` when it is used up |\n"
+            "description": "Create an event (starts as a draft).\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| title | required | string | max 255 |\n| slug | optional | string | max 120; lowercase letters, numbers and single hyphens (e.g. open-mic-night); must be unique. If empty, it is made from the title. Cannot change after the event is published The example adds {{$timestamp}} so it is unique each run; delete the slug line to let the API make one from the title. |\n| description | optional | string | max 10000; can be null |\n| venue_name | required | string | max 255 |\n| venue_address | optional | string | max 500; can be null |\n| starts_at | required | date-time | ISO 8601 with offset, e.g. 2027-05-01T20:00:00+08:00 |\n| ends_at | required | date-time | ISO 8601 with offset; must be after starts_at |\n| capacity | optional | integer | min 1; limit SHARED by all ticket types of the event (null or empty = no limit). Checkout answers event_sold_out when it is used up |\n"
           },
           "event": [
             {
@@ -582,14 +578,14 @@
             "url": "{{base_url}}/admin/events/{{event_id}}/ticket-types",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Regular\",\n  \"description\": \"General admission\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-01T10:00:00\",\n  \"sales_end_at\": \"2027-04-30T23:00:00\",\n  \"sort_order\": 2,\n  \"unlocks_after_ticket_type_id\": null\n}",
+              "raw": "{\n  \"name\": \"General\",\n  \"description\": \"General admission, standing.\",\n  \"price_minor\": 5000,\n  \"quantity\": 100,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-15T09:00:00+08:00\",\n  \"sales_end_at\": \"2027-05-01T19:00:00+08:00\",\n  \"sort_order\": 0,\n  \"unlocks_after_ticket_type_id\": null\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "| field | required | type / units | rules |\n|---|---|---|---|\n| `name` | required | string | max 255 |\n| `description` | optional | string | max 5000 |\n| `price_minor` | required | integer, minor units (5000 = RM 50.00) | 0 to 9999999999; no decimals |\n| `quantity` | required | integer, tickets | 1 to 1000000; on update cannot go below sold + held |\n| `max_per_order` | optional | integer | 1 to 100, default 10 |\n| `sales_start_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `sales_end_at` | optional | ISO-8601 | after sales_start_at and not after the event ends; none = until the event ends |\n| `sort_order` | optional | integer | 0 to 65535; default = after the last tier |\n| `unlocks_after_ticket_type_id` | optional | integer (ticket type id) | Tier progression: this tier opens once that tier is sold out (sold + held >= quantity) or its sales ended; until then checkout answers `tier_locked` (409). Must be a tier of the same event, not itself, no loops; null removes it |\n"
+            "description": "Add a ticket type to an event. Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| name | required | string | max 255 |\n| description | optional | string | max 5000; can be null |\n| price_minor | required | integer, sen | 0 to 9999999999. 5000 = RM 50.00. Whole numbers only (no decimals, no text) |\n| quantity | required | integer | 1 to 1000000. Cannot be lower than tickets already sold + held |\n| max_per_order | optional | integer | 1 to 100; most tickets one order can buy. Default 10 if empty (cannot be null on update) |\n| sales_start_at | optional | date-time | ISO 8601 with offset; can be null; must be before sales_end_at and before the event ends_at |\n| sales_end_at | optional | date-time | ISO 8601 with offset; can be null; must be after sales_start_at and not later than the event ends_at |\n| sort_order | optional | integer | 0 to 65535; display order (cannot be null on update) |\n| unlocks_after_ticket_type_id | optional | integer | tier progression: this ticket type opens only after that ticket type is sold out (sold + held) or its sales ended; until then checkout answers tier_locked (409). Same event, not itself, no loops; null removes it. Unsold tickets of the earlier tier are NOT moved to this one |\n"
           },
           "event": [
             {
@@ -657,14 +653,14 @@
             "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Regular\",\n  \"description\": \"General admission\",\n  \"price_minor\": 8000,\n  \"quantity\": 150,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-01T10:00:00\",\n  \"sales_end_at\": \"2027-04-30T23:00:00\",\n  \"sort_order\": 2,\n  \"unlocks_after_ticket_type_id\": null\n}",
+              "raw": "{\n  \"name\": \"General\",\n  \"description\": \"General admission, standing.\",\n  \"price_minor\": 8000,\n  \"quantity\": 150,\n  \"max_per_order\": 6,\n  \"sales_start_at\": \"2027-01-15T09:00:00+08:00\",\n  \"sales_end_at\": \"2027-05-01T19:00:00+08:00\",\n  \"sort_order\": 0,\n  \"unlocks_after_ticket_type_id\": null\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "PATCH: every field is optional, send only what changes.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `name` | required | string | max 255 |\n| `description` | optional | string | max 5000 |\n| `price_minor` | required | integer, minor units (5000 = RM 50.00) | 0 to 9999999999; no decimals |\n| `quantity` | required | integer, tickets | 1 to 1000000; on update cannot go below sold + held |\n| `max_per_order` | optional | integer | 1 to 100, default 10 |\n| `sales_start_at` | optional | ISO-8601 | no offset = tenant timezone |\n| `sales_end_at` | optional | ISO-8601 | after sales_start_at and not after the event ends; none = until the event ends |\n| `sort_order` | optional | integer | 0 to 65535; default = after the last tier |\n| `unlocks_after_ticket_type_id` | optional | integer (ticket type id) | Tier progression: this tier opens once that tier is sold out (sold + held >= quantity) or its sales ended; until then checkout answers `tier_locked` (409). Must be a tier of the same event, not itself, no loops; null removes it |\n"
+            "description": "Change a ticket type. All fields are optional: send ONLY the fields you want to change. Money is in sen.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| name | optional | string | max 255 |\n| description | optional | string | max 5000; can be null |\n| price_minor | optional | integer, sen | 0 to 9999999999. 5000 = RM 50.00. Whole numbers only (no decimals, no text) |\n| quantity | optional | integer | 1 to 1000000. Cannot be lower than tickets already sold + held |\n| max_per_order | optional | integer | 1 to 100; most tickets one order can buy. Default 10 if empty (cannot be null on update) |\n| sales_start_at | optional | date-time | ISO 8601 with offset; can be null; must be before sales_end_at and before the event ends_at |\n| sales_end_at | optional | date-time | ISO 8601 with offset; can be null; must be after sales_start_at and not later than the event ends_at |\n| sort_order | optional | integer | 0 to 65535; display order (cannot be null on update) |\n| unlocks_after_ticket_type_id | optional | integer | tier progression: this ticket type opens only after that ticket type is sold out (sold + held) or its sales ended; until then checkout answers tier_locked (409). Same event, not itself, no loops; null removes it. Unsold tickets of the earlier tier are NOT moved to this one |\n"
           }
         },
         {
@@ -786,14 +782,14 @@
             "url": "{{base_url}}/admin/orders/{{reference}}/refund",
             "body": {
               "mode": "raw",
-              "raw": "{ \"reason\": \"Buyer asked\" }",
+              "raw": "{\n  \"reason\": \"Buyer asked\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Full refund of a `paid` or `refund_pending` order; refused if a ticket was scanned. The refund records what the buyer actually paid (discount applied); the promo code use is not given back.\n\n| field | required | type / units | rules |\n|---|---|---|---|\n| `reason` | optional | string, max 500 | free text shown on the refund |\n"
+            "description": "Refund one order (paid or refund_pending); refused if a ticket was already scanned. The refund records what the buyer actually paid (discount included); the promo code use is not given back.\n\n| Field | Required? | Type / units | Rules |\n|---|---|---|---|\n| reason | optional | string | max 500; can be null |\n"
           }
         },
         {
