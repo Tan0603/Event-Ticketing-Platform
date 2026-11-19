@@ -1100,7 +1100,7 @@ components:
     PromoDiscountType: { type: string, enum: [percent, fixed] }
     SalesStatus:
       type: string
-      enum: [not_published, cancelled, upcoming, on_sale, sold_out, ended, locked]
+      enum: [not_published, cancelled, scheduled, on_sale, sold_out, ended, locked]
       description: '`locked` = waits for the previous tier (`unlocks_after`) to sell out or end. `sold_out` also applies when the event-level capacity is used up.'
 
     RegisterTenantRequest:

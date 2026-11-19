@@ -9,7 +9,7 @@ enum SalesStatus: string
 {
     case NotPublished = 'not_published';
     case Cancelled = 'cancelled';
-    case Upcoming = 'upcoming';
+    case Scheduled = 'scheduled';
     case OnSale = 'on_sale';
     case SoldOut = 'sold_out';
     case Ended = 'ended';
@@ -31,7 +31,7 @@ enum SalesStatus: string
         return match (true) {
             $eventStatus === EventStatus::Cancelled => self::Cancelled,
             $eventStatus === EventStatus::Draft => self::NotPublished,
-            $salesStart !== null && $now->lt($salesStart) => self::Upcoming,
+            $salesStart !== null && $now->lt($salesStart) => self::Scheduled,
             $now->gte($effectiveSalesEnd) => self::Ended,
             $available <= 0 => self::SoldOut,
             $locked => self::Locked,

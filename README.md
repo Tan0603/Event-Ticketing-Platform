@@ -371,6 +371,9 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **A promo discount never touches fees**: they are charged per ticket on the original price, so a 100 % code leaves the fees to pay.
 - **Tier progression: "done" means sold + held >= quantity, or the sales window ended.** Holds count as gone, so a tier opens as soon
   as its predecessor is fully reserved; if those holds expire the successor locks again for new buyers (existing orders unaffected).
+- **Tier progression does not move unsold stock.** When a tier ends, its unsold tickets are simply not sold; the next tier keeps
+  its own price and quantity. To offer those seats, set an event capacity (shared by all tiers) or raise the next tier's quantity.
+- **The sales status before `sales_start_at` is `scheduled`** (the spec's word); the event's own timing phase stays `upcoming`.
 - **Event capacity serialises checkouts of that event** (row lock), and events without a capacity are unchanged. The admin list field
   that used to be `capacity` (sum of tier quantities) is now `tickets_capacity`; `capacity` is the event-level limit.
 - **Export files are not deleted automatically**; only the signed link expires (30 minutes). A new export can be requested at any time.
