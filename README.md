@@ -29,7 +29,7 @@ curl http://localhost:8088/api/events -H "X-Tenant-ID: sunsetfest"
 
 ## API at a glance
 
-The full contract is in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1, every route, request fields and error codes; hand-written, check it parses with `python3 -c "import yaml; yaml.safe_load(open('docs/openapi.yaml'))"`). Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event-ticketing.postman_collection.json) for ready-made requests (every POST/PATCH lists all fields in its description). Every tenant request sends `X-Tenant-ID`; staff requests also send `Authorization: Bearer <token>`. Errors are JSON `{"error": "stable_code", "message": "..."}`.
+The full contract is in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1, every route, request fields and error codes; hand-written, check it parses with `python3 -c "import yaml; yaml.safe_load(open('docs/openapi.yaml'))"`). Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event-ticketing.postman_collection.json) for ready-made requests (every POST/PATCH lists all fields in its description). It has two example tenants built in, `maxis` and `digi` (admins `admin@maxis.test` / `admin@digi.test`, password `password123`): run `Register tenant: maxis` and `Register tenant: digi` once, then `Login as maxis` or `Login as digi` sets `tenant` and `token` for every other request. Every tenant request sends `X-Tenant-ID`; staff requests also send `Authorization: Bearer <token>`. Errors are JSON `{"error": "stable_code", "message": "..."}`.
 
 | area | endpoints | who |
 |---|---|---|
