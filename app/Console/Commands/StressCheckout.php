@@ -2,11 +2,16 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\EventStatus;
+use App\Enums\EventTiming;
 use App\Enums\OrderStatus;
+use App\Enums\SalesStatus;
 use App\Models\Central\Tenant;
 use App\Models\Tenant\Event;
 use App\Models\Tenant\OrderItem;
 use App\Models\Tenant\TicketType;
+use App\Support\TenantTime;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
@@ -45,7 +50,7 @@ class StressCheckout extends Command
         $concurrency = max(1, (int) $this->option('concurrency'));
         $ticketTypeId = (int) $this->argument('ticket_type');
 
-        /** @var array{slug: string, name: string, quantity: int, sold: int, held: int, capacity: int|null, reserved: int}|null $before */
+        /** @var array{slug: string, name: string, quantity: int, sold: int, held: int, capacity: int|null, reserved: int, problem: string|null}|null $before */
         $before = $tenant->run(function () use ($ticketTypeId): ?array {
             $tier = TicketType::query()->with('event')->find($ticketTypeId);
 
@@ -57,6 +62,7 @@ class StressCheckout extends Command
                 'held' => $tier->held,
                 'capacity' => $tier->event->capacity,
                 'reserved' => $tier->event->reserved,
+                'problem' => $this->notOnSale($tier),
             ];
         });
 
@@ -64,6 +70,12 @@ class StressCheckout extends Command
             $this->error('Unknown ticket type.');
 
             return self::INVALID;
+        }
+
+        if ($before['problem'] !== null) {
+            $this->error($before['problem']);
+
+            return self::FAILURE;
         }
 
         $ipLimit = (int) config('ticketing.rate_limits.checkout_per_minute_ip');
@@ -75,6 +87,12 @@ class StressCheckout extends Command
             $this->line("Event shared capacity {$before['capacity']} (reserved {$before['reserved']}).");
         }
         $this->info("Tenant {$tenant->id} · \"{$before['name']}\" · quantity {$before['quantity']} (sold {$before['sold']}, held {$before['held']})");
+        $left = max(0, $before['quantity'] - $before['sold'] - $before['held']);
+        if ($before['capacity'] !== null) {
+            $left = min($left, max(0, $before['capacity'] - $before['reserved']));
+        }
+        $expectCreated = min($requests, intdiv($left, $quantity));
+        $this->info("On sale. Remaining: {$left}, so expect {$expectCreated} created and ".($requests - $expectCreated).' insufficient_stock.');
         $this->info("Sending {$requests} checkouts of {$quantity} ticket(s), {$concurrency} at a time ...");
 
         $url = rtrim((string) $this->option('url'), '/')."/api/events/{$before['slug']}/checkout";
@@ -163,5 +181,31 @@ class StressCheckout extends Command
         $this->{$ok ? 'info' : 'error'}($ok ? 'No oversell.' : 'INVARIANT BROKEN.');
 
         return $ok ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Why checkout would answer 409 to every request, with the fix; null when the tier is open for sale. Uses the
+     * same status rule as the storefront and checkout (SalesStatus). Runs inside the tenant.
+     */
+    private function notOnSale(TicketType $tier): ?string
+    {
+        $id = $tier->id;
+        $event = $tier->event;
+        $fmt = fn (?CarbonInterface $t): string => $t === null ? 'not set' : $t->setTimezone(TenantTime::timezone())->format('Y-m-d H:i');
+
+        if ($event->status !== EventStatus::Published || $event->timing() === EventTiming::Ended) {
+            return match (true) {
+                $event->status === EventStatus::Draft => "Ticket type {$id} belongs to a draft event (not published). Publish it first: POST /api/admin/events/{$event->id}/publish",
+                $event->status === EventStatus::Cancelled => "Ticket type {$id} belongs to a cancelled event. Use another ticket type or a published event.",
+                default => "Ticket type {$id} belongs to an event that already ended (ends_at {$fmt($event->ends_at)}). Use an upcoming event.",
+            };
+        }
+
+        return match ($tier->salesStatus()) {
+            SalesStatus::Scheduled => "Ticket type {$id} is not on sale yet (sales_start_at {$fmt($tier->sales_start_at)}). Open it first: PATCH /api/admin/ticket-types/{$id} {\"sales_start_at\": null}",
+            SalesStatus::Ended => "Ticket type {$id} sales have ended (sales_end_at {$fmt($tier->effectiveSalesEnd())}). Extend it first: PATCH /api/admin/ticket-types/{$id} {\"sales_end_at\": null}",
+            SalesStatus::Locked => "Ticket type {$id} is locked until \"{$tier->unlocksAfter?->name}\" sells out or ends. Unlock it first: PATCH /api/admin/ticket-types/{$id} {\"unlocks_after_ticket_type_id\": null}",
+            default => null, // on sale (a sold-out tier is still a valid run: every request is answered insufficient_stock)
+        };
     }
 }

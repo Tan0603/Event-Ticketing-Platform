@@ -48,8 +48,14 @@ Docker Compose for everything. Runtime packages beyond the framework: `stancl/te
   produce an un-namespaced key. A grep audit for raw keys is part of the review checklist.
 - **Queued jobs** take ids (the tenant id and the order/event id), never models, and re-enter the tenant with the
   `RunsInTenant` trait. `ProvisionTenantJob` is the only central job.
+  `RunsInTenant` checks `TenantDatabase::exists()` *before* initialising tenancy. Without that check, an active tenant
+  row whose database is gone makes stancl's `DatabaseTenancyBootstrapper` throw before the cache and filesystem
+  bootstrappers ran, and the `revert()` that follows nulls `app('cache')` and throws on the filesystem disk: a long-lived
+  queue worker is then broken for every later job of every tenant. With the check the job throws `TenantDatabaseMissing`
+  and fails at once (no retries), `failed()` handlers only log, and the process stays healthy.
 - **Scheduled tasks** (`routes/console.php`) fan out one job per *active* tenant (`DispatchForActiveTenants`), so each task runs
   in its own tenant context; `withoutOverlapping` + `onOneServer` stop a task overlapping itself.
+  Active tenants whose database does not exist are skipped with a warning (one `pg_database` query for all tenants).
 - **File storage**: QR codes are generated on demand from the ticket code and are not stored. The only stored files are
   attendee CSV exports (section 13): they sit on the `exports` disk under `exports/{tenant id}/{uuid}.csv`, every path is
   built by `App\Support\TenantStorage` (which, like `TenantKey`, refuses to run outside tenant context), and the
