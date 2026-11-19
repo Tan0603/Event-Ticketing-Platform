@@ -101,3 +101,13 @@ it('leaves pre-existing orders, tickets and stock untouched (e.g. after demo:see
             ->and(DB::table('refunds')->count())->toBeGreaterThanOrEqual($before['refunds']);
     });
 });
+
+it('always has a published past, live and upcoming event', function () {
+    ($this->seed)();
+
+    $this->tenant->run(function () {
+        $phases = DB::select("SELECT DISTINCT CASE WHEN ends_at < now() THEN 'past' WHEN starts_at <= now() THEN 'live' ELSE 'upcoming' END AS phase FROM events WHERE status = 'published'");
+
+        expect(array_column($phases, 'phase'))->toContain('past', 'live', 'upcoming');
+    });
+});
