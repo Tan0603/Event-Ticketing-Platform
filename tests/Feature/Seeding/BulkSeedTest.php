@@ -4,6 +4,7 @@ use App\Models\Tenant\Event;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\Ticket;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     $this->tenant = provisionTenant('acme-events');
@@ -76,4 +77,27 @@ it('serves the dashboard and reports from the seeded data', function () {
 
 it('refuses a tenant that is not active', function () {
     $this->artisan('demo:seed-bulk', ['tenants' => ['no-such-tenant']])->assertFailed();
+});
+
+it('leaves pre-existing orders, tickets and stock untouched (e.g. after demo:seed)', function () {
+    Mail::fake();
+    $this->artisan('demo:seed', ['tenant' => 'acme-events', '--orders' => 30])->assertSuccessful();
+
+    $before = $this->tenant->run(fn () => [
+        'tickets' => DB::table('tickets')->orderBy('id')->get()->toArray(),
+        'ticket_types' => DB::table('ticket_types')->orderBy('id')->get()->toArray(),
+        'refunds' => DB::table('refunds')->count(),
+    ]);
+    expect($before['tickets'])->not->toBeEmpty();
+
+    ($this->seed)();
+
+    $this->tenant->run(function () use ($before) {
+        $demoTickets = DB::table('tickets')->whereIn('id', array_column($before['tickets'], 'id'))->orderBy('id')->get()->toArray();
+        $demoTypes = DB::table('ticket_types')->whereIn('id', array_column($before['ticket_types'], 'id'))->orderBy('id')->get()->toArray();
+
+        expect($demoTickets)->toEqual($before['tickets'])
+            ->and($demoTypes)->toEqual($before['ticket_types'])
+            ->and(DB::table('refunds')->count())->toBeGreaterThanOrEqual($before['refunds']);
+    });
 });

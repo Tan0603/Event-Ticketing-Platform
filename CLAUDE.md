@@ -10,7 +10,7 @@ API only: no frontend, no Vite, no Breeze/Jetstream. Blade is used only for emai
 Ask before adding any composer package not listed in ARCHITECTURE.md §0.
 
 ## Commands
-- `docker compose up -d`: app, nginx, postgres, redis, horizon, scheduler, mailpit (UI http://localhost:8025)
+- `docker compose up -d`: app, nginx, postgres, redis, horizon, scheduler, mailpit (UI http://localhost:8026)
 - `composer test`: full Pest suite (must pass before every commit)
 - `vendor/bin/pint && vendor/bin/phpstan analyse`: must be clean before every commit
 - `php artisan stress:checkout {tenant} {ticket_type} --requests=200`
@@ -69,6 +69,13 @@ These map to the spec's automatic-fail conditions.
 4. If the requirements are ambiguous, don't guess silently. Add an entry under **Assumptions** in `README.md` and mention it in your reply.
 5. If a change touches a hard rule, stop and explain before editing.
 6. If you change a design decision, update `ARCHITECTURE.md` in the same commit.
+
+## Who does what (AI sessions)
+- **Opus** (main session): plans, decides, reviews subagent output against REQUIREMENTS.md and the hard rules, then commits and merges.
+- **Sonnet** subagent: writes code and the complex changes (features, fixes, non-trivial tests).
+- **Haiku** subagent: simple tasks: small edits, running tests/linters, searching code and docs.
+- One-line answers and quick lookups are done directly, without a subagent.
+- Postman collection: every POST/PATCH body lists every field the FormRequest accepts (optional ones with example values); the request's description says, per field, required/optional, units (e.g. minor units = sen) and rules.
 
 ## Definition of done (per feature)
 - [ ] Behaviour matches REQUIREMENTS.md, including status codes

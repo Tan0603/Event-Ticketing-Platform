@@ -86,7 +86,7 @@ describe('sales status', function () {
     it('follows the sales window, stock and event state', function () {
         $published = $this->tenant->run(fn () => Event::factory()->published()->create(['starts_at' => '2027-03-01 11:00:00', 'ends_at' => '2027-03-01 15:00:00']));
         $ids = $this->tenant->run(fn () => [
-            'upcoming' => TicketType::factory()->for($published)->create(['sales_start_at' => '2027-02-01 00:00:00'])->id,
+            'scheduled' => TicketType::factory()->for($published)->create(['sales_start_at' => '2027-02-01 00:00:00'])->id,
             'ended' => TicketType::factory()->for($published)->create(['sales_end_at' => '2026-12-31 00:00:00'])->id,
             'sold_out' => TicketType::factory()->for($published)->create(['quantity' => 10, 'sold' => 7, 'held' => 3])->id,
             'on_sale' => TicketType::factory()->for($published)->create(['quantity' => 10, 'sold' => 7, 'held' => 2])->id,
