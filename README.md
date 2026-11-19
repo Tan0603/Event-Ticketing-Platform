@@ -331,6 +331,9 @@ The `scheduler` container runs `schedule:work`. Each task only dispatches **one 
 (tenants that are `provisioning` or `failed` are skipped), so tenants run in parallel and one broken tenant
 cannot block the others. The per-tenant jobs are idempotent and run on the Horizon queue.
 
+An active tenant whose database is missing is skipped by the scheduler (a warning is logged) and any of its jobs fail
+fast with `TenantDatabaseMissing`; purge it with `php artisan tenant:purge {id} --force`.
+
 | task | every | what it does |
 |---|---|---|
 | `expire-pending-orders` | minute | Pending orders past `expires_at` become `expired` and their held tickets go back to stock (`ReleaseOrder`, one short transaction per order, lock order event -> order -> ticket types). Orders paid in the meantime are skipped after re-checking under the lock. |

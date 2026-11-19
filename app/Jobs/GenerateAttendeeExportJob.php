@@ -34,6 +34,6 @@ class GenerateAttendeeExportJob implements ShouldQueue
     /** Called when the queue gives up (timeout, killed worker): the export must not stay "processing" for ever. */
     public function failed(Throwable $e): void
     {
-        $this->inTenant(fn () => app(GenerateAttendeeExport::class)->markFailed($this->exportId, $e));
+        $this->inTenantOnFailure(fn () => app(GenerateAttendeeExport::class)->markFailed($this->exportId, $e));
     }
 }
