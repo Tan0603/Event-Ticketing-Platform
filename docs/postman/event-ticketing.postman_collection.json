@@ -780,7 +780,7 @@
           }
         },
         {
-          "name": "Delete ticket type (only when nothing sold or held)",
+          "name": "Delete ticket type (only while it has no orders)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -793,7 +793,8 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}"
+            "url": "{{base_url}}/admin/ticket-types/{{ticket_type_id}}",
+            "description": "Delete a ticket type. No body. 409 ticket_type_has_sales while tickets are sold or held, or while any order (any status) has a line for it; 409 last_ticket_type if it is the only tier of a published event."
           }
         },
         {
@@ -954,7 +955,7 @@
           }
         },
         {
-          "name": "Delete event (only while nothing sold or held)",
+          "name": "Delete event (only while it has no orders)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -967,7 +968,8 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/admin/events/{{event_id}}"
+            "url": "{{base_url}}/admin/events/{{event_id}}",
+            "description": "Delete an event and its ticket types. No body. Allowed only while the event has no orders at all: any order, whatever its status (pending, paid, failed, expired, refunded), makes it 409 event_has_orders. Cancel the event instead."
           }
         },
         {

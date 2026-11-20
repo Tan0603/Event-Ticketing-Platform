@@ -93,11 +93,11 @@ All under `/api/admin`, admin role only, `X-Tenant-ID` + `Authorization: Bearer 
 | method | path | what |
 |---|---|---|
 | GET / POST | `/events` | list (paginated; `status`, `q`, `from`, `to`, `sort`, `direction`, `per_page`; rows carry `tickets_capacity` = sum of tier quantities) / create (draft; optional `capacity`, see below) |
-| GET / PATCH / DELETE | `/events/{id}` | show with tiers / update / delete (blocked once anything sold or held) |
+| GET / PATCH / DELETE | `/events/{id}` | show with tiers / update / delete (blocked once the event has any order) |
 | POST | `/events/{id}/publish` | needs at least one ticket type |
 | POST | `/events/{id}/cancel` | stops all sales |
 | GET / POST | `/events/{id}/ticket-types` | tiers of an event / add one |
-| GET / PATCH / DELETE | `/ticket-types/{id}` | show / update / delete (blocked once anything sold or held) |
+| GET / PATCH / DELETE | `/ticket-types/{id}` | show / update / delete (blocked once any order refers to the ticket type) |
 
 **Event-level shared capacity.** `capacity` (optional, on create and PATCH, `null` = no limit) caps the tickets of ALL ticket
 types of an event together: with two tiers of 50 and a capacity of 60, 60 tickets can be sold in total, then checkout answers
@@ -362,7 +362,7 @@ Ambiguities in the assignment are recorded here as they are resolved.
   to keep tests and the stress test fast. They are for local development only.
 - **Token lifetime is 12 hours** (`SANCTUM_EXPIRATION_MINUTES`). Logout revokes only the token that was used.
 - **Login is throttled** at 5/min per tenant + email + IP (`TICKETING_LOGIN_RATE_LIMIT`); the counter is tenant-scoped.
-- **Events with sales cannot be deleted** (any ticket sold or held): cancel them instead. Once orders exist this widens to "has any orders".
+- **An event or ticket type with any order cannot be deleted**, whatever the order status (also failed, expired or refunded). The spec only forbids deleting with paid orders / sales; this is stricter because failed and expired orders, their webhook and refund records are history, and the database foreign keys would refuse the delete anyway. Cancel the event instead. Both answer `409` (`event_has_orders`, `ticket_type_has_sales`).
 - **The slug of a published event is frozen** because its public link would break. Drafts can change it.
 - **A tier's sales window must end by the event end;** with no end set it stops selling when the event ends.
 - **Quantity can shrink only down to sold + held** (checked atomically, backed by a CHECK constraint).

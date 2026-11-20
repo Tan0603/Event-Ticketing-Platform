@@ -158,6 +158,8 @@ Checkout, the webhook, the expiry job and refunds all lock in that order (the ev
 checkouts run in parallel while cancelling the event, which takes it `FOR UPDATE`, waits for them). `DB::transaction($cb, 3)`
 retries on the rare serialization or deadlock error.
 
+**Deleting.** An event or ticket type that has any order (any status, also failed, expired or refunded) cannot be deleted: `409 event_has_orders` / `ticket_type_has_sales`. `DeleteEvent` checks `orders.event_id` (indexed) under the event `FOR UPDATE`; `DeleteTicketType` does it inside its single atomic `DELETE ... WHERE sold = 0 AND held = 0 AND NOT EXISTS (order_items ...)`. The `RESTRICT` foreign keys (`orders.event_id`, `order_items.ticket_type_id`, tickets) are the last guard: a `23503` that still slips through is caught outside the (rolled back) transaction and mapped to the same 409, never a 500.
+
 **Proof.** `php artisan stress:checkout {tenant} {ticket_type} --requests=200 --concurrency=50` fires concurrent real HTTP
 checkouts at one ticket type and prints held + sold against capacity and the status histogram. With quantity 50 and 200
 requests the result is exactly 50 held, every other request a 409, no 500s, and `sold + held == quantity`.
