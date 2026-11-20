@@ -610,7 +610,7 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       tags: [Events]
-      summary: Delete an event (admin; only while nothing was sold or held)
+      summary: Delete an event (admin; only while it has no orders)
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Deleted. }
@@ -618,7 +618,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: The event has sales or orders.
+          description: event_has_orders. The event has any order (any status) or sold or held tickets; cancel it instead.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -785,7 +785,7 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }
     delete:
       tags: [Ticket types]
-      summary: Delete a ticket type (admin; only while nothing is sold or held)
+      summary: Delete a ticket type (admin; only while no order refers to it)
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: Deleted. }
@@ -793,7 +793,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: ticket_type_has_sales or last_ticket_type.
+          description: ticket_type_has_sales (sold or held tickets, or any order line refers to it) or last_ticket_type.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

@@ -1,10 +1,13 @@
 <?php
 
 use App\Enums\EventStatus;
+use App\Enums\OrderStatus;
 use App\Enums\UserRole;
 use App\Models\Tenant\Event;
+use App\Models\Tenant\Order;
 use App\Models\Tenant\TicketType;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /** @param array<string, mixed> $overrides */
 function eventPayload(array $overrides = []): array
@@ -17,6 +20,19 @@ function eventPayload(array $overrides = []): array
         'starts_at' => '2027-03-01T19:00:00+08:00',
         'ends_at' => '2027-03-01T23:00:00+08:00',
     ], $overrides);
+}
+
+/** An order of the given status for the event, with one line for the ticket type (what checkout would leave behind). */
+function orderWithLine(Event $event, TicketType $tier, OrderStatus $status): Order
+{
+    $order = Order::factory()->for($event)->create(['status' => $status]);
+    DB::table('order_items')->insert([
+        'order_id' => $order->id, 'ticket_type_id' => $tier->id, 'ticket_type_name' => $tier->name,
+        'unit_price_minor' => 5000, 'quantity' => 2, 'line_total_minor' => 10000,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    return $order;
 }
 
 beforeEach(function () {
@@ -196,6 +212,38 @@ describe('deleting events', function () {
         $this->deleteJson("/api/admin/events/{$event->id}", [], $this->h)
             ->assertStatus(409)->assertJsonPath('error', 'event_has_orders');
         expect($this->tenant->run(fn () => Event::query()->count()))->toBe(1);
+    });
+
+    it('refuses to delete an event whose only orders are failed, expired or refunded', function (OrderStatus $status) {
+        [$event, $tier] = $this->tenant->run(function () use ($status) {
+            $event = Event::factory()->published()->create();
+            $tier = TicketType::factory()->for($event)->create();
+            orderWithLine($event, $tier, $status);
+
+            return [$event, $tier];
+        });
+
+        $this->deleteJson("/api/admin/events/{$event->id}", [], $this->h)
+            ->assertStatus(409)->assertJsonPath('error', 'event_has_orders');
+        expect($this->tenant->run(fn () => [Event::query()->count(), TicketType::query()->count()]))->toBe([1, 1]);
+    })->with([
+        'failed' => [OrderStatus::Failed],
+        'expired' => [OrderStatus::Expired],
+        'refunded' => [OrderStatus::Refunded],
+    ]);
+
+    it('answers 409, not 500, when an order appears after the check (foreign keys are the last guard)', function () {
+        $event = $this->tenant->run(fn () => tap(Event::factory()->create(), fn ($e) => TicketType::factory()->for($e)->create()));
+
+        // Fires inside the delete transaction, after the pre-check: a checkout that slipped in.
+        Event::deleting(function (Event $deleting): void {
+            Order::factory()->for($deleting)->create(['status' => OrderStatus::Failed]);
+        });
+
+        $this->deleteJson("/api/admin/events/{$event->id}", [], $this->h)
+            ->assertStatus(409)->assertJsonPath('error', 'event_has_orders');
+        // The whole transaction was rolled back: the ticket types are still there.
+        expect($this->tenant->run(fn () => [Event::query()->count(), TicketType::query()->count(), Order::query()->count()]))->toBe([1, 1, 0]);
     });
 });
 
