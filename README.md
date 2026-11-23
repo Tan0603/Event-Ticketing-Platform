@@ -193,6 +193,8 @@ counts and then audits the database: `sold + held <= quantity`, `held` grew by e
 `held` equals the tickets in pending orders. Example with a 50-ticket tier: 50 x `201`, 150 x `409 insufficient_stock`, all
 invariants PASS. The ticket type must be on sale (published event, open sales window); the command checks this first,
 prints the reason and the fix if not, and sends nothing. (Absolute req/s depends on the machine; Docker Desktop on Windows is the slow case.)
+All test cases with their setup and expected numbers (multi-ticket orders, event capacity, preflight, double scan,
+hold expiry) are in [docs/stress-tests.md](docs/stress-tests.md).
 
 ## Payments (webhook)
 
