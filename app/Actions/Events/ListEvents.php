@@ -22,7 +22,7 @@ class ListEvents
 
         return Event::query()
             ->withCount('ticketTypes')
-            ->withSum('ticketTypes as capacity', 'quantity')
+            ->withSum('ticketTypes as tickets_capacity', 'quantity')
             ->withSum('ticketTypes as tickets_sold', 'sold')
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->when($filters['q'] ?? null, function ($q, string $term) {

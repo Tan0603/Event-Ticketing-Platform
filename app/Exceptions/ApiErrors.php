@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Exceptions\InvalidSignatureException;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 /**
@@ -38,7 +40,9 @@ final class ApiErrors
             $e instanceof BusinessRuleException => self::make($e->errorCode, $e->getMessage(), $e->status, [], $e->detail),
             $e instanceof AuthenticationException => self::make('unauthenticated', 'Authentication required.', 401),
             $e instanceof AuthorizationException => self::make('forbidden', 'This action is not allowed.', 403),
-            $e instanceof ModelNotFoundException => self::make('not_found', 'Resource not found.', 404),
+            // Route-model-binding misses and unknown routes arrive as NotFoundHttpException whose message names a model class.
+            $e instanceof ModelNotFoundException, $e instanceof NotFoundHttpException => self::make('not_found', 'Resource not found.', 404),
+            $e instanceof InvalidSignatureException => self::make('invalid_signature', 'This link is invalid or has expired.', 403),
             $e instanceof HttpExceptionInterface => self::make(
                 self::codeFor($e->getStatusCode()),
                 $e->getMessage() !== '' ? $e->getMessage() : 'Request failed.',

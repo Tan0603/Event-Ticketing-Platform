@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface|null $sales_start_at
  * @property CarbonInterface|null $sales_end_at
  * @property int $sort_order
+ * @property int|null $unlocks_after_ticket_type_id
+ * @property-read TicketType|null $unlocksAfter
  * @property-read Event $event
  */
 class TicketType extends Model
@@ -36,7 +38,7 @@ class TicketType extends Model
 
     protected $fillable = [
         'name', 'description', 'price_minor', 'quantity', 'max_per_order',
-        'sales_start_at', 'sales_end_at', 'sort_order',
+        'sales_start_at', 'sales_end_at', 'sort_order', 'unlocks_after_ticket_type_id',
     ];
 
     /** @return array<string, string> */
@@ -49,6 +51,7 @@ class TicketType extends Model
             'held' => 'integer',
             'max_per_order' => 'integer',
             'sort_order' => 'integer',
+            'unlocks_after_ticket_type_id' => 'integer',
             'sales_start_at' => 'immutable_datetime',
             'sales_end_at' => 'immutable_datetime',
         ];
@@ -60,9 +63,41 @@ class TicketType extends Model
         return $this->belongsTo(Event::class);
     }
 
+    /** @return BelongsTo<TicketType, $this> the tier that must be done before this one opens */
+    public function unlocksAfter(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'unlocks_after_ticket_type_id');
+    }
+
+    /**
+     * Whether this tier still waits for its predecessor (display only: the atomic hold decides). The predecessor
+     * is done when its stock is gone or its sales window ended. Needs `unlocksAfter` and `event` loaded.
+     */
+    public function isLocked(CarbonInterface $now): bool
+    {
+        $predecessor = $this->unlocksAfter;
+
+        if ($predecessor === null) {
+            return false;
+        }
+
+        $stockGone = $predecessor->sold + $predecessor->held >= $predecessor->quantity;
+        $windowEnded = $now->gte($predecessor->sales_end_at ?? $this->event->ends_at);
+
+        return ! ($stockGone || $windowEnded);
+    }
+
     public function available(): int
     {
         return max(0, $this->quantity - $this->sold - $this->held);
+    }
+
+    /** What a buyer could still get: the tier's own stock, capped by what is left of the event's shared capacity. */
+    public function sellable(): int
+    {
+        $remaining = $this->event->capacityRemaining();
+
+        return $remaining === null ? $this->available() : min($this->available(), $remaining);
     }
 
     /** Sales stop at the tier's own end, or when the event ends if none is set. Requires `event` loaded. */
@@ -77,8 +112,9 @@ class TicketType extends Model
             $this->event->status,
             $this->sales_start_at,
             $this->effectiveSalesEnd(),
-            $this->available(),
-            $now ?? now(),
+            $this->sellable(),
+            $now ??= now(),
+            $this->isLocked($now),
         );
     }
 

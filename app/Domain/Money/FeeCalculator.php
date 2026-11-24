@@ -2,6 +2,7 @@
 
 namespace App\Domain\Money;
 
+use App\Enums\PromoDiscountType;
 use InvalidArgumentException;
 
 /**
@@ -10,6 +11,9 @@ use InvalidArgumentException;
  * The booking fee is charged PER TICKET: percentage of that ticket's unit price (half-up) plus a fixed amount.
  * A free ticket carries no fee (assumption, see README). A line's fee is the ticket fee times its quantity, so a
  * line total and the order total always add up exactly.
+ *
+ * A promo code takes money off the TICKET subtotal only (never below zero); fees stay those of the original
+ * ticket prices. Order total = subtotal - discount + fees.
  */
 final class FeeCalculator
 {
@@ -39,11 +43,32 @@ final class FeeCalculator
     }
 
     /**
-     * Totals for an order given its lines as [unit price minor, quantity] pairs.
+     * Discount of a promo code on a ticket subtotal: a percentage (half-up, integer maths) or a fixed amount,
+     * never more than the subtotal, so the total can not go negative.
+     *
+     * @param  int  $value  basis points for a percent code, minor units for a fixed one
+     */
+    public static function discount(int $subtotalMinor, PromoDiscountType $type, int $value): int
+    {
+        if ($subtotalMinor < 0 || $value < 0) {
+            throw new InvalidArgumentException('Amounts and rates cannot be negative.');
+        }
+
+        $discount = match ($type) {
+            PromoDiscountType::Percent => self::percentFee($subtotalMinor, $value),
+            PromoDiscountType::Fixed => $value,
+        };
+
+        return min($discount, $subtotalMinor);
+    }
+
+    /**
+     * Totals for an order given its lines as [unit price minor, quantity] pairs, and optionally a promo code
+     * (its type and value: basis points or minor units).
      *
      * @param  array<int, array{0: int, 1: int}>  $lines
      */
-    public static function totals(array $lines, int $bps, int $fixedMinor): OrderTotals
+    public static function totals(array $lines, int $bps, int $fixedMinor, ?PromoDiscountType $promoType = null, int $promoValue = 0): OrderTotals
     {
         $subtotal = 0;
         $fees = 0;
@@ -53,6 +78,8 @@ final class FeeCalculator
             $fees += self::ticketFee($unitPrice, $bps, $fixedMinor) * $quantity;
         }
 
-        return new OrderTotals($subtotal, $fees, $subtotal + $fees);
+        $discount = $promoType === null ? 0 : self::discount($subtotal, $promoType, $promoValue);
+
+        return new OrderTotals($subtotal, $fees, $subtotal - $discount + $fees, $discount);
     }
 }

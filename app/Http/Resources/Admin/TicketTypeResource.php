@@ -23,11 +23,12 @@ class TicketTypeResource extends JsonResource
             'quantity' => $this->quantity,
             'sold' => $this->sold,
             'held' => $this->held,
-            'available' => $this->available(),
+            'available' => $this->sellable(),
             'max_per_order' => $this->max_per_order,
             'sales_start_at' => TenantTime::iso($this->sales_start_at),
             'sales_end_at' => TenantTime::iso($this->sales_end_at),
             'sort_order' => $this->sort_order,
+            'unlocks_after_ticket_type_id' => $this->unlocks_after_ticket_type_id,
             'sales_status' => $this->salesStatus()->value,
         ];
     }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Money\FeeCalculator;
+use App\Enums\PromoDiscountType;
 
 it('rounds the percentage half-up with integer maths', function (int $amount, int $bps, int $expected) {
     expect(FeeCalculator::percentFee($amount, $bps))->toBe($expected);
@@ -38,4 +39,36 @@ it('refuses amounts that would overflow and negative input', function () {
     expect(fn () => FeeCalculator::percentFee(PHP_INT_MAX, 500))->toThrow(InvalidArgumentException::class)
         ->and(fn () => FeeCalculator::percentFee(-1, 500))->toThrow(InvalidArgumentException::class)
         ->and(fn () => FeeCalculator::percentFee(100, -1))->toThrow(InvalidArgumentException::class);
+});
+
+describe('promo code discounts', function () {
+    it('takes a percentage off the ticket subtotal, half-up, in integer maths', function () {
+        // 14997 x 10 % = 1499.7 -> 1500 ; 5 x 10 % = 0.5 -> 1 ; 4 x 10 % = 0.4 -> 0
+        expect(FeeCalculator::discount(14997, PromoDiscountType::Percent, 1000))->toBe(1500)
+            ->and(FeeCalculator::discount(5, PromoDiscountType::Percent, 1000))->toBe(1)
+            ->and(FeeCalculator::discount(4, PromoDiscountType::Percent, 1000))->toBe(0)
+            ->and(FeeCalculator::discount(10000, PromoDiscountType::Percent, 10000))->toBe(10000);
+    });
+
+    it('takes a fixed amount off, never more than the subtotal', function () {
+        expect(FeeCalculator::discount(10000, PromoDiscountType::Fixed, 3000))->toBe(3000)
+            ->and(FeeCalculator::discount(10000, PromoDiscountType::Fixed, 99999))->toBe(10000)
+            ->and(FeeCalculator::discount(0, PromoDiscountType::Fixed, 500))->toBe(0);
+    });
+
+    it('prices the spec worked example with a 10 % code: fees stay those of the original prices', function () {
+        $totals = FeeCalculator::totals([[4500, 2], [1999, 3]], 500, 50, PromoDiscountType::Percent, 1000);
+
+        expect($totals->subtotalMinor)->toBe(14997)
+            ->and($totals->discountMinor)->toBe(1500)
+            ->and($totals->feeMinor)->toBe(1000)
+            ->and($totals->totalMinor)->toBe(14497)
+            ->and($totals->totalMinor)->toBe($totals->subtotalMinor - $totals->discountMinor + $totals->feeMinor);
+    });
+
+    it('is unchanged without a code', function () {
+        $totals = FeeCalculator::totals([[4500, 2], [1999, 3]], 500, 50);
+
+        expect($totals->discountMinor)->toBe(0)->and($totals->totalMinor)->toBe(15997);
+    });
 });

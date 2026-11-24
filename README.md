@@ -29,7 +29,7 @@ curl http://localhost:8088/api/events -H "X-Tenant-ID: sunsetfest"
 
 ## API at a glance
 
-Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event-ticketing.postman_collection.json) for ready-made requests. Every tenant request sends `X-Tenant-ID`; staff requests also send `Authorization: Bearer <token>`. Errors are JSON `{"error": "stable_code", "message": "..."}`.
+The full contract is in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1, every route, request fields and error codes; hand-written, check it parses with `python3 -c "import yaml; yaml.safe_load(open('docs/openapi.yaml'))"`). Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event-ticketing.postman_collection.json) for ready-made requests (every POST/PATCH lists all fields in its description). It has two example tenants built in, `maxis` and `digi` (admins `admin@maxis.test` / `admin@digi.test`, password `password123`): run `Register tenant: maxis` and `Register tenant: digi` once, then `Login as maxis` or `Login as digi` sets `tenant` and `token` for every other request. Every tenant request sends `X-Tenant-ID`; staff requests also send `Authorization: Bearer <token>`. Errors are JSON `{"error": "stable_code", "message": "..."}`.
 
 | area | endpoints | who |
 |---|---|---|
@@ -38,6 +38,8 @@ Import [docs/postman/event-ticketing.postman_collection.json](docs/postman/event
 | shop | `GET /events`, `GET /events/{slug}`, `POST /events/{slug}/checkout`, `GET /orders/{reference}` | public |
 | payments | `POST /webhooks/payments/{tenant}` (HMAC signed) | payment provider |
 | e-mail links | `GET /public/{tenant}/orders/{reference}/tickets`, `GET /public/{tenant}/tickets/{code}/qr` (signed URLs) | buyers |
+| exports | `POST /admin/events/{event}/attendee-exports`, `GET /admin/attendee-exports/{id}`, `GET /public/{tenant}/attendee-exports/{id}/download` (signed URL) | admin |
+| promo codes | `GET/POST /admin/promo-codes`, `GET/PATCH/DELETE /admin/promo-codes/{id}` | admin |
 | door | `POST /admin/events/{event}/check-ins`, `GET /admin/events/{event}/check-ins/stats` | door staff, admin |
 | admin | events, ticket types, orders, refunds, `/admin/settings`, `/admin/dashboard`, `/admin/reports/sales`, `/admin/reports/events/{id}`, `/admin/events/{id}/attendees` | admin |
 
@@ -54,7 +56,7 @@ docker compose exec app vendor/bin/phpstan analyse   # Larastan level 6
 Every test provisions a real tenant database. To keep that fast the suite builds one migrated template database
 (`tenanttpl_<hash of the tenant migrations>`, rebuilt automatically when a migration changes) and each tenant database
 is cloned from it with `CREATE DATABASE ... TEMPLATE` (`ticketing.tenant_template_database`; empty in production).
-The full suite (about 340 tests) runs in about two minutes. Run suites one at a time: they share one test database.
+The full suite (about 440 tests) runs in about two minutes. Run suites one at a time: they share one test database.
 
 ## Tenants
 
@@ -90,12 +92,25 @@ All under `/api/admin`, admin role only, `X-Tenant-ID` + `Authorization: Bearer 
 
 | method | path | what |
 |---|---|---|
-| GET / POST | `/events` | list (paginated; `status`, `q`, `from`, `to`, `sort`, `direction`, `per_page`) / create (draft) |
-| GET / PATCH / DELETE | `/events/{id}` | show with tiers / update / delete (blocked once anything sold or held) |
+| GET / POST | `/events` | list (paginated; `status`, `q`, `from`, `to`, `sort`, `direction`, `per_page`; rows carry `tickets_capacity` = sum of tier quantities) / create (draft; optional `capacity`, see below) |
+| GET / PATCH / DELETE | `/events/{id}` | show with tiers / update / delete (blocked once the event has any order) |
 | POST | `/events/{id}/publish` | needs at least one ticket type |
 | POST | `/events/{id}/cancel` | stops all sales |
 | GET / POST | `/events/{id}/ticket-types` | tiers of an event / add one |
-| GET / PATCH / DELETE | `/ticket-types/{id}` | show / update / delete (blocked once anything sold or held) |
+| GET / PATCH / DELETE | `/ticket-types/{id}` | show / update / delete (blocked once any order refers to the ticket type) |
+
+**Event-level shared capacity.** `capacity` (optional, on create and PATCH, `null` = no limit) caps the tickets of ALL ticket
+types of an event together: with two tiers of 50 and a capacity of 60, 60 tickets can be sold in total, then checkout answers
+`409 event_sold_out` and every tier shows `sold_out`. The counter `events.reserved` (sold + held) is moved by the same atomic
+conditional `UPDATE`s as the tier counters, and given back on expiry, failed payment and refund; a late payment finding the
+event full becomes `refund_pending`. Lowering `capacity` below what is sold + held is `422`. Events and the storefront show
+`capacity` and `capacity_remaining` (null without a limit). Capped events serialise their checkouts on the event row; events
+without a capacity are unaffected (ARCHITECTURE section 2).
+
+**Tier progression.** A ticket type may set `unlocks_after_ticket_type_id`: it opens only once that tier (same event, no
+loops) is sold out (sold + held >= quantity) or its sales window has ended. The rule is inside the atomic hold `UPDATE`;
+until then checkout answers `409 tier_locked`, the tier's `sales_status` is `locked` and the storefront shows
+`unlocks_after` (`{id, name}`).
 
 Prices are integer minor units (`5000` = RM 50.00). Times: any ISO-8601 value; one without an offset is read in the tenant timezone, and responses show the tenant timezone.
 
@@ -132,11 +147,40 @@ A repeated request with the same `Idempotency-Key` returns the same order (`200`
 holds nothing twice; the same key with a different body is `422 idempotency_key_reused`.
 `GET /api/orders/{reference}` shows an order to whoever holds its reference.
 
-Errors: `404` unknown/unpublished event, `409` `insufficient_stock` / `sales_not_started` / `sales_ended` /
-`event_not_on_sale`, `422` validation (also a ticket type of another event, or above max per order), `429` throttled.
+Errors: `404` unknown/unpublished event, `409` `insufficient_stock` / `event_sold_out` / `tier_locked` / `sales_not_started` / `sales_ended` /
+`event_not_on_sale` / `promo_code_exhausted`, `422` validation (also a ticket type of another event, or above max per order) /
+`idempotency_key_reused` / `promo_code_invalid` / `promo_code_not_started` / `promo_code_expired`, `429` throttled.
 
-**Fees:** `fee = round-half-up(subtotal x fee_bps / 10000) + fee_fixed`, all integer maths in `App\Domain\Money\FeeCalculator`;
-a free order (subtotal 0) has no fee. Example: 2 x 5000 -> subtotal 10000, fee 500 + 50, total 10550.
+### Promo codes
+
+Optional `promo_code` in the checkout body (any letter case). A code takes a percentage (`percent_bps`, half-up integer maths)
+or a fixed amount (`amount_minor`) off the **ticket subtotal**, never more than the subtotal. **Fees stay those of the
+original ticket prices**, so `total = subtotal - discount + fees` (the spec example with a 10 % code: 149.97 - 15.00 + 10.00 =
+144.97). The order shows `discount_minor` and `promo_code` (admin and buyer views); the webhook amount must be the discounted
+total. One use is taken per order by one atomic conditional `UPDATE ... WHERE used < max_uses` inside the checkout transaction
+(after the ticket types in the lock order), so two orders racing for the last use cannot both win. The use is given back when
+the order expires or its payment fails.
+
+Admin (`/api/admin/promo-codes`, admin role): `GET` list (paginated; `event_id`, `is_active`, `q`), `POST`, `GET/PATCH /{id}`,
+`DELETE /{id}` (only while `used = 0`, else `409 promo_code_in_use`: PATCH `is_active=false`). A code can be limited to one
+`event_id`, to `max_uses`, and to a `starts_at`..`ends_at` window (bare times are read in the tenant timezone).
+The event report and the sales report show `discounts_minor` next to the (discounted) gross.
+
+**Fees (per ticket, not per order):** each tenant has `fee_percent_bps` (500 = 5.00 %) and `fee_fixed_minor` (sen).
+For every ticket the fee is `percent fee + fixed fee`, where the percent fee is the unit price x bps, rounded half-up
+with integer maths only: `intdiv(unit_price * bps + 5000, 10000)`. A line's fee is the ticket fee x quantity, and
+`total = sum(unit_price x quantity) + sum(line fees)`. A free ticket (price 0) has no fee. All of this is in
+`App\Domain\Money\FeeCalculator`; the amounts are saved on the order and its lines and never recomputed.
+
+Example with the defaults (5 % + RM 0.50, i.e. `fee_percent_bps` 500, `fee_fixed_minor` 50), buying
+2 x General (RM 50.00 = 5000 sen) and 1 x Early Bird (RM 33.30 = 3330 sen):
+
+| line | percent fee per ticket | + fixed | fee per ticket | x qty | line fee | line subtotal |
+|---|---|---|---|---|---|---|
+| General 5000 | `intdiv(5000 x 500 + 5000, 10000)` = 250 | 50 | 300 | 2 | 600 | 10000 |
+| Early Bird 3330 | `intdiv(3330 x 500 + 5000, 10000)` = 167 (166.5 rounds up) | 50 | 217 | 1 | 217 | 3330 |
+
+Subtotal 13330 sen (RM 133.30) + fees 817 sen (RM 8.17) = **total 14147 sen (RM 141.47)**.
 
 ### Proving it does not oversell
 
@@ -147,17 +191,25 @@ docker compose exec app php artisan stress:checkout {tenant} {ticket_type_id} --
 It sends real concurrent HTTP checkouts at one ticket type (default via the `nginx` container), prints the outcome
 counts and then audits the database: `sold + held <= quantity`, `held` grew by exactly the orders created, and
 `held` equals the tickets in pending orders. Example with a 50-ticket tier: 50 x `201`, 150 x `409 insufficient_stock`, all
-invariants PASS. (Absolute req/s depends on the machine; Docker Desktop on Windows is the slow case.)
+invariants PASS. The ticket type must be on sale (published event, open sales window); the command checks this first,
+prints the reason and the fix if not, and sends nothing. (Absolute req/s depends on the machine; Docker Desktop on Windows is the slow case.)
 
 ## Payments (webhook)
 
-`POST /api/webhooks/{tenant}/payments` is called by the payment provider. It cannot send our header, so the tenant is
-in the path, and the request is authenticated with `X-Signature` = hex HMAC-SHA256 of the **raw body**, keyed with the
-webhook secret of the tenant **in the URL** (shown once by `tenant:provision`), compared in constant time, before the
-body is read.
+`POST /api/webhooks/payments/{tenant}` is called by the payment provider (for example
+`http://localhost:8088/api/webhooks/payments/sunsetfest`). It cannot send our `X-Tenant-ID` header, so the tenant is
+in the path. There is no query-string or subdomain fallback.
+
+Headers: `Content-Type: application/json` and `X-Signature: <hex>`, where the signature is the hex HMAC-SHA256 of the
+**raw body**, keyed with the webhook secret of the tenant **in the URL** (shown by `GET /api/admin/settings`, and once
+by `tenant:provision`). It is compared in constant time before the body is read. A `sha256=<hex>` prefix is also accepted.
+
+Body fields: `id` (required, unique per notification), `type` (required: `payment.succeeded` or `payment.failed`),
+`payment_reference` (required, from the checkout response), `amount` (integer, minor units; required for
+`payment.succeeded`), `currency` (3 letters; required for `payment.succeeded`), `occurred_at` (optional date).
 
 ```json
-{"id":"evt_123","type":"payment.succeeded","data":{"order_reference":"ORD-...","amount_minor":10550,"currency":"MYR"}}
+{"id":"evt_123","type":"payment.succeeded","payment_reference":"pay_abc123def456","amount":14147,"currency":"MYR","occurred_at":"2026-11-23T10:00:00Z"}
 ```
 
 | result | meaning |
@@ -165,7 +217,8 @@ body is read.
 | `200 {"status":"paid"}` | pending order paid, the hold became a sale |
 | `200 {"status":"duplicate"}` | this event id was already processed (retry-safe, exactly once) |
 | `200 {"status":"failed"}` | pending order failed, tickets released |
-| `200 {"status":"paid_late"}` / `late_payment_no_stock` | the hold had already expired: honoured if stock is left, otherwise recorded for a refund |
+| `200 {"status":"paid_late"}` | the hold had already expired but the tickets were still free: the order is paid |
+| `200 {"status":"late_payment_no_stock"}` | the hold had expired and the tickets are gone: the order becomes `refund_pending` (no tickets, the organizer refunds) |
 | `422 amount_mismatch` | amount or currency differs from the order total: the order is NOT paid |
 | `401 invalid_signature` | missing or wrong signature |
 
@@ -174,6 +227,7 @@ To play the provider locally:
 ```bash
 docker compose exec app php artisan payments:simulate {tenant} {order_reference} succeeded   # or failed
 # --event-id=evt_1 (reuse to see duplicate handling)   --amount=1 (see the mismatch guard)
+# it signs the body with the tenant's secret and posts it to the real endpoint above
 ```
 
 After pulling new code: `php artisan migrate` (central) and `php artisan tenants:migrate` (every tenant database).
@@ -229,6 +283,16 @@ stock, every ticket becomes `void`, the order moves to `refunded` through the st
 written (UNIQUE `order_id`) and the buyer gets an e-mail. If any ticket was already scanned at the door the whole
 refund is refused (`tickets_already_used`) and nothing changes. Not paid: `invalid_order_state`.
 
+## Attendee CSV export (admin)
+
+`POST /api/admin/events/{event}/attendee-exports` answers `202` with an export (`pending`) and queues a tenant job that streams
+the event's tickets (ticket code, ticket type, status, checked_in_at, order reference, buyer name, buyer e-mail) to
+`exports/{tenant id}/{uuid}.csv` on the `exports` disk (`storage/app/private`), then marks it `ready` and e-mails the requesting
+admin a temporary signed download link (`TICKETING_EXPORT_LINK_MINUTES`, 30). `GET /api/admin/attendee-exports/{id}` shows the
+status and, when ready, a fresh `download_url`; the link (`/api/public/{tenant}/attendee-exports/{id}/download`) needs no login,
+returns `text/csv`, and answers `403 invalid_signature` when tampered or expired. A failure is recorded on the export
+(`status=failed`, `error`). Throttled per staff member (`TICKETING_EXPORT_RATE_LIMIT`, 10/min).
+
 ## Dashboard and reports (admin)
 
 All figures are SQL aggregates (`GROUP BY` / `SUM` / `COUNT ... FILTER`), integer minor units, cached per tenant for
@@ -243,7 +307,7 @@ holds can lag by up to the TTL.
 ## Load data (spec section 18)
 
 `php artisan demo:seed-bulk alpha-events beta-tickets` (tenants must exist and be active; `tenant:provision` them first)
-loads, per tenant, 40 events (past, live, upcoming, a few drafts/cancelled), 3-5 ticket types each, 30 000 orders in every
+loads, per tenant, 40 events (always at least one published past, live and upcoming event, plus a few drafts/cancelled), 3-5 ticket types each, 30 000 orders in every
 status, about 93 000 tickets, refunds, and check-ins for about 80 % of the tickets of past events. Options:
 `--events=30..50`, `--orders=20000..50000`, `--seed`. It takes about 25-30 s per tenant because it writes in bulk: orders and
 order lines in chunks of 1 000 rows; tickets, refunds, check-ins and the stock counters as set-based SQL in PostgreSQL. It does
@@ -267,6 +331,9 @@ history. Running it twice does nothing the second time.
 The `scheduler` container runs `schedule:work`. Each task only dispatches **one job per active tenant**
 (tenants that are `provisioning` or `failed` are skipped), so tenants run in parallel and one broken tenant
 cannot block the others. The per-tenant jobs are idempotent and run on the Horizon queue.
+
+An active tenant whose database is missing is skipped by the scheduler (a warning is logged) and any of its jobs fail
+fast with `TenantDatabaseMissing`; purge it with `php artisan tenant:purge {id} --force`.
 
 | task | every | what it does |
 |---|---|---|
@@ -295,14 +362,20 @@ Ambiguities in the assignment are recorded here as they are resolved.
   to keep tests and the stress test fast. They are for local development only.
 - **Token lifetime is 12 hours** (`SANCTUM_EXPIRATION_MINUTES`). Logout revokes only the token that was used.
 - **Login is throttled** at 5/min per tenant + email + IP (`TICKETING_LOGIN_RATE_LIMIT`); the counter is tenant-scoped.
-- **Events with sales cannot be deleted** (any ticket sold or held): cancel them instead. Once orders exist this widens to "has any orders".
+- **An event or ticket type with any order cannot be deleted**, whatever the order status (also failed, expired or refunded). The spec only forbids deleting with paid orders / sales; this is stricter because failed and expired orders, their webhook and refund records are history, and the database foreign keys would refuse the delete anyway. Cancel the event instead. Both answer `409` (`event_has_orders`, `ticket_type_has_sales`).
 - **The slug of a published event is frozen** because its public link would break. Drafts can change it.
 - **A tier's sales window must end by the event end;** with no end set it stops selling when the event ends.
 - **Quantity can shrink only down to sold + held** (checked atomically, backed by a CHECK constraint).
 - **Cancelled events disappear from the public shop** (404, same as a draft). Their buyers are handled through orders and refunds, not the public page.
 - **Availability on the public page may lag by up to 15 seconds** (`TICKETING_CACHE_AVAILABILITY_TTL`). A buyer who sees tickets left can still be told "sold out" at checkout; PostgreSQL is the source of truth.
 
-- **A free ticket carries no fee** (the percentage and fixed fee are charged per paid ticket; a free order totals 0).
+- **Field names differ from the PDF.** The API uses these names (PDF name -> API name):
+  `price` -> `price_minor`, `sales_starts_at` -> `sales_start_at`, `sales_ends_at` -> `sales_end_at`.
+  `price_minor` makes the integer minor-unit rule (sen, never decimals) clear in the name, and `sales_start_at` /
+  `sales_end_at` match the other `*_at` timestamp fields. Event fields (`title`, `slug`, `venue_name`, `starts_at`,
+  `ends_at`, ...) keep the PDF names. The sales status values are the PDF's: `scheduled`, `on_sale`, `sold_out`, `ended`.
+
+- **A free ticket carries no fee** (the percentage and fixed fee are charged per paid ticket, as the spec says; a free order totals 0).
 - **A `refund_pending` order is not counted as a sale** in reports (money was taken but no tickets exist); it counts as a refund once refunded.
 - **Route paths differ from the PDF's suggestions** (`/events/{slug}/checkout`, `/public/{tenant}/...` signed URLs, per-event check-in under `/admin`); the PDF allows other paths. Behaviour and status codes follow the PDF.
 - **Architecture and reasoning** are in [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -311,7 +384,7 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Containers log to stderr** (`LOG_CHANNEL=stderr`): php-fpm and artisan run as different users and cannot share one log file.
 
 - **A payment after `expires_at` but before the expiry job ran is a normal payment** (the order is still pending).
-- **A payment after the job released the hold** is honoured only if the tickets are still free; otherwise the order stays expired and the notification is recorded as `late_payment_no_stock` for a refund.
+- **A payment after the job released the hold** (order already `expired`) is handled in one transaction, all or nothing. If every ticket is still free, the order becomes `paid` and the tickets are issued (`paid_late`). If any ticket is gone, nothing is sold and the order moves to `refund_pending` (`late_payment_no_stock`): the money was taken but there are no tickets, so the organizer must refund it.
 - **An amount mismatch is answered 422 and never marks the order paid.** The event id is recorded, so the provider must send a corrected notification under a new id.
 - **An unknown order reference is answered 200** (`unknown_order`) so the provider does not retry forever.
 - **A free order (total 0) is paid immediately at checkout.**
@@ -324,4 +397,17 @@ Ambiguities in the assignment are recorded here as they are resolved.
 - **Check-in has no time window.** A valid ticket of a published event is accepted at any time; the scanner can pass
   `event_id` to refuse tickets of another event.
 - **Reminders are sent once per order**, 24 hours before the event (`ticketing.reminder_hours_before`), to paid orders only.
+- **Promo codes: a refund does not give the use back** (the buyer did use the code); expiry and a failed payment do. A late
+  payment on an expired order takes the use again when the code still has one, otherwise the order keeps the price it was quoted
+  (`used` never passes `max_uses`). A code applied to a free order (subtotal 0) still takes a use.
+- **A promo discount never touches fees**: they are charged per ticket on the original price, so a 100 % code leaves the fees to pay.
+- **Tier progression: "done" means sold + held >= quantity, or the sales window ended.** Holds count as gone, so a tier opens as soon
+  as its predecessor is fully reserved; if those holds expire the successor locks again for new buyers (existing orders unaffected).
+- **Tier progression does not move unsold stock.** When a tier ends, its unsold tickets are simply not sold; the next tier keeps
+  its own price and quantity. To offer those seats, set an event capacity (shared by all tiers) or raise the next tier's quantity.
+- **The sales status before `sales_start_at` is `scheduled`** (the spec's word); the event's own timing phase stays `upcoming`.
+- **Event capacity serialises checkouts of that event** (row lock), and events without a capacity are unchanged. The admin list field
+  that used to be `capacity` (sum of tier quantities) is now `tickets_capacity`; `capacity` is the event-level limit.
+- **Export files are not deleted automatically**; only the signed link expires (30 minutes). A new export can be requested at any time.
+- **Invalid or expired signed links answer `403 invalid_signature`** (they used to answer a generic `forbidden`; the status is unchanged).
 - **Payment after `expires_at` but before the expiry task ran counts as a normal payment** (your decision 4): the expiry task re-checks the status under the lock.

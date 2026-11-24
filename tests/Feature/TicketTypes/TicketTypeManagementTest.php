@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\OrderStatus;
 use App\Enums\UserRole;
 use App\Models\Tenant\Event;
+use App\Models\Tenant\Order;
 use App\Models\Tenant\TicketType;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
@@ -11,6 +13,19 @@ use Illuminate\Support\Facades\DB;
 function tierPayload(array $overrides = []): array
 {
     return array_merge(['name' => 'General', 'price_minor' => 5000, 'quantity' => 100], $overrides);
+}
+
+/** An order of the given status for the event, with one line for the ticket type (what checkout would leave behind). */
+function tierOrderWithLine(Event $event, TicketType $tier, OrderStatus $status): Order
+{
+    $order = Order::factory()->for($event)->create(['status' => $status]);
+    DB::table('order_items')->insert([
+        'order_id' => $order->id, 'ticket_type_id' => $tier->id, 'ticket_type_name' => $tier->name,
+        'unit_price_minor' => 5000, 'quantity' => 2, 'line_total_minor' => 10000,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    return $order;
 }
 
 beforeEach(function () {
@@ -86,7 +101,7 @@ describe('sales status', function () {
     it('follows the sales window, stock and event state', function () {
         $published = $this->tenant->run(fn () => Event::factory()->published()->create(['starts_at' => '2027-03-01 11:00:00', 'ends_at' => '2027-03-01 15:00:00']));
         $ids = $this->tenant->run(fn () => [
-            'upcoming' => TicketType::factory()->for($published)->create(['sales_start_at' => '2027-02-01 00:00:00'])->id,
+            'scheduled' => TicketType::factory()->for($published)->create(['sales_start_at' => '2027-02-01 00:00:00'])->id,
             'ended' => TicketType::factory()->for($published)->create(['sales_end_at' => '2026-12-31 00:00:00'])->id,
             'sold_out' => TicketType::factory()->for($published)->create(['quantity' => 10, 'sold' => 7, 'held' => 3])->id,
             'on_sale' => TicketType::factory()->for($published)->create(['quantity' => 10, 'sold' => 7, 'held' => 2])->id,
@@ -165,6 +180,38 @@ describe('deleting ticket types', function () {
         'sold' => [['sold' => 1]],
         'held' => [['held' => 1]],
     ]);
+
+    it('refuses to delete a tier referenced by an order of any status, but deletes its siblings', function (OrderStatus $status) {
+        [$used, $free] = $this->tenant->run(function () use ($status) {
+            $used = TicketType::factory()->for($this->event)->create();
+            $free = TicketType::factory()->for($this->event)->create();
+            tierOrderWithLine($this->event, $used, $status);
+
+            return [$used, $free];
+        });
+
+        $this->deleteJson("/api/admin/ticket-types/{$used->id}", [], $this->h)
+            ->assertStatus(409)->assertJsonPath('error', 'ticket_type_has_sales');
+        expect($this->tenant->run(fn () => TicketType::query()->whereKey($used->id)->exists()))->toBeTrue();
+
+        $this->deleteJson("/api/admin/ticket-types/{$free->id}", [], $this->h)->assertNoContent();
+    })->with([
+        'failed' => [OrderStatus::Failed],
+        'expired' => [OrderStatus::Expired],
+        'refunded' => [OrderStatus::Refunded],
+    ]);
+
+    it('answers 409, not 500, when an order line appears after the pre-checks', function () {
+        $tier = $this->tenant->run(fn () => TicketType::factory()->for($this->event)->create());
+
+        // Fires inside the delete transaction (the event row is read under lock), before the atomic DELETE.
+        Event::retrieved(function (Event $e) use ($tier): void {
+            tierOrderWithLine($e, $tier, OrderStatus::Failed);
+        });
+
+        $this->deleteJson("/api/admin/ticket-types/{$tier->id}", [], $this->h)
+            ->assertStatus(409)->assertJsonPath('error', 'ticket_type_has_sales');
+    });
 
     it('keeps at least one tier on a published event', function () {
         $published = $this->tenant->run(fn () => Event::factory()->published()->create());

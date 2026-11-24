@@ -58,6 +58,9 @@ class ListPublicEvents
      */
     private function query(array $filters): Builder
     {
+        // Tickets left across the tiers; an event-level capacity caps it.
+        $available = TicketType::query()->selectRaw('COALESCE(SUM(GREATEST(quantity - sold - held, 0)), 0)')->whereColumn('ticket_types.event_id', 'events.id')->toSql();
+
         return Event::query()
             ->where('status', EventStatus::Published)
             ->where('ends_at', '>', now())
@@ -66,9 +69,8 @@ class ListPublicEvents
                 TicketType::query()->selectRaw('MIN(price_minor)')->whereColumn('ticket_types.event_id', 'events.id'),
                 'from_price_minor',
             )
-            ->selectSub(
-                TicketType::query()->selectRaw('COALESCE(SUM(GREATEST(quantity - sold - held, 0)), 0)')->whereColumn('ticket_types.event_id', 'events.id'),
-                'tickets_available',
+            ->selectRaw(
+                'CASE WHEN events.capacity IS NULL THEN ('.$available.') ELSE LEAST(('.$available.'), GREATEST(events.capacity - events.reserved, 0)) END AS tickets_available',
             )
             ->when($filters['q'] ?? null, function ($q, string $term) {
                 $like = '%'.addcslashes($term, '\\%_').'%';

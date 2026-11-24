@@ -28,6 +28,8 @@ class CreateTicketType
 
             SalesWindow::assertValid($locked, $attributes['sales_start_at'] ?? null, $attributes['sales_end_at'] ?? null);
 
+            TierPredecessor::assertValid($locked->id, null, $attributes[TierPredecessor::FIELD] ?? null);
+
             $attributes['max_per_order'] ??= (int) config('ticketing.max_per_order_default');
             $attributes['sort_order'] ??= ((int) $locked->ticketTypes()->reorder()->max('sort_order')) + 1;
 

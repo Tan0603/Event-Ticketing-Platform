@@ -2,13 +2,13 @@
 
 namespace App\Actions\Orders;
 
+use App\Domain\Inventory\EventLock;
 use App\Domain\Inventory\TicketStock;
 use App\Domain\Orders\OrderStateMachine;
 use App\Enums\NotificationType;
 use App\Enums\OrderStatus;
 use App\Enums\TicketStatus;
 use App\Exceptions\BusinessRuleException;
-use App\Models\Tenant\Event;
 use App\Models\Tenant\Order;
 use App\Models\Tenant\Refund;
 use App\Models\Tenant\Ticket;
@@ -35,7 +35,7 @@ class RefundOrder
                 throw new BusinessRuleException('order_not_found', 'No such order.', 404);
             }
 
-            Event::query()->sharedLock()->findOrFail($known->event_id);
+            EventLock::acquire($known->event_id);
             /** @var Order $order */
             $order = Order::query()->lockForUpdate()->with('items')->findOrFail($orderId);
 

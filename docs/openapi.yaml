@@ -1,0 +1,1532 @@
+openapi: 3.1.0
+info:
+  title: Event Ticketing Platform API
+  version: 1.0.0
+  description: |
+    Multi-tenant event ticketing API (Laravel 12, database per tenant).
+
+    * Every tenant request names its tenant in the **`X-Tenant-ID`** header (there is no query-string or subdomain fallback).
+      A missing header is `400 tenant_header_missing`, an unknown tenant `404 tenant_not_found`, a tenant that is not
+      `active` `409`.
+    * Staff endpoints (`/admin/...`) need `Authorization: Bearer <token>` from `POST /auth/login`. Roles: `admin`
+      (everything) and `door_staff` (check-in only).
+    * Money is always an **integer in minor units** (`5000` = 50.00 in the tenant currency); there are no floats.
+    * Times are ISO-8601. Input without an offset is read in the tenant timezone; output is shown in the tenant timezone.
+    * Errors are JSON `{ "error": "stable_code", "message": "...", "errors": { field: [..] } }` (`errors` only for
+      `validation_failed`). A client mistake is never a 500.
+    * Routes that cannot send a header (payment webhook, e-mailed links) carry the tenant in the path.
+    * Laravel's Horizon dashboard routes (`/horizon/...`) are an operator tool and are not part of this API.
+servers:
+  - url: http://localhost:8088/api
+    description: Local Docker Compose
+security: []
+tags:
+  - name: Sign-up
+  - name: Auth
+  - name: Storefront
+  - name: Payments
+  - name: Buyer links
+  - name: Check-in
+  - name: Events
+  - name: Ticket types
+  - name: Promo codes
+  - name: Orders
+  - name: Reports
+  - name: Exports
+  - name: Settings
+
+paths:
+  /register:
+    post:
+      tags: [Sign-up]
+      summary: Register a tenant (central, no X-Tenant-ID)
+      description: Creates the tenant with status `provisioning` and queues the provisioning job. Rate limited per IP. An existing id is `422` and the existing tenant is never touched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterTenantRequest' }
+      responses:
+        '202':
+          description: Accepted; poll `GET /register/{tenantId}`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantRegistrationEnvelope' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /register/{tenantId}:
+    get:
+      tags: [Sign-up]
+      summary: Provisioning status (central)
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: provisioning, active or failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantRegistrationEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log a staff member in
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: A Sanctum token bound to this tenant (12 h).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthToken' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the token that was used
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      responses:
+        '204': { description: Logged out. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /events:
+    get:
+      tags: [Storefront]
+      summary: Published events that have not ended (public)
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Matches title or venue name. }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: On or after `from`. }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Page of events, soonest first. Stock numbers are never exposed (`sold_out` only).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Paginated' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PublicEventSummary' }
+        '404': { $ref: '#/components/responses/TenantNotFound' }
+  /events/{slug}:
+    get:
+      tags: [Storefront]
+      summary: One published event with its ticket types (public)
+      description: Drafts, cancelled and unknown events all answer the same 404. Availability may lag by up to 15 seconds; checkout decides.
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The event.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PublicEvent' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{slug}/checkout:
+    post:
+      tags: [Storefront]
+      summary: Place an order and hold the tickets (public)
+      description: |
+        Holds every line atomically (all or nothing) for `TICKETING_HOLD_MINUTES` (10). A free order is paid at once.
+        Same `Idempotency-Key` + same body replays the same order (`200`, `Idempotent-Replayed: true`); the same key with
+        a different body (including a different `promo_code`) is `422 idempotency_key_reused`.
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^[A-Za-z0-9_\-:.]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '201':
+          description: Order created (`pending`, or `paid` when the total is 0).
+          headers:
+            Idempotent-Replayed: { schema: { type: string, enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuyerOrderEnvelope' }
+        '200':
+          description: Replay of an earlier request with the same Idempotency-Key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuyerOrderEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            One of `insufficient_stock`, `event_sold_out`, `tier_locked`, `sales_not_started`, `sales_ended`,
+            `event_not_on_sale`, `promo_code_exhausted`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            `validation_failed` (also a ticket type of another event or above max per order),
+            `idempotency_key_reused`, `promo_code_invalid`, `promo_code_not_started`, `promo_code_expired`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /orders/{reference}:
+    get:
+      tags: [Storefront]
+      summary: An order by its (unguessable) reference (public)
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: reference, in: path, required: true, schema: { type: string, example: ORD-AB12CD34EF56 } }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuyerOrderEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /webhooks/payments/{tenant}:
+    post:
+      tags: [Payments]
+      summary: Payment provider notification (HMAC signed)
+      description: |
+        The tenant is in the path. `X-Signature` is the hex HMAC-SHA256 of the **raw body** with that tenant's webhook
+        secret, checked in constant time before the body is parsed. The same `id` twice is processed once.
+        `payment.succeeded` needs `amount` and `currency` to match the order total (discount included), else `422 amount_mismatch`.
+      parameters:
+        - { name: tenant, in: path, required: true, schema: { type: string } }
+        - { name: X-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentWebhookRequest' }
+      responses:
+        '200':
+          description: Processed or already processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: paid, paid_late, failed, duplicate, already_paid, late_payment_no_stock, unknown_order, ignored
+        '401':
+          description: invalid_signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /public/{tenant}/orders/{reference}/tickets:
+    get:
+      tags: [Buyer links]
+      summary: Tickets of a paid or refunded order (signed link from the e-mail)
+      description: The URL must carry a valid `expires` and `signature` (30 days). Invalid or expired is `403 invalid_signature`.
+      parameters:
+        - { name: tenant, in: path, required: true, schema: { type: string } }
+        - { name: reference, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/SignatureExpires' }
+        - { $ref: '#/components/parameters/Signature' }
+      responses:
+        '200':
+          description: The order and its tickets with signed QR links.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderTickets' }
+        '403': { $ref: '#/components/responses/InvalidSignature' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /public/{tenant}/tickets/{code}/qr:
+    get:
+      tags: [Buyer links]
+      summary: QR code PNG of one ticket (signed link)
+      parameters:
+        - { name: tenant, in: path, required: true, schema: { type: string } }
+        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/SignatureExpires' }
+        - { $ref: '#/components/parameters/Signature' }
+      responses:
+        '200':
+          description: PNG image.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/InvalidSignature' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /public/{tenant}/attendee-exports/{export}/download:
+    get:
+      tags: [Exports]
+      summary: Download an attendee CSV (temporary signed link)
+      description: |
+        The link comes from the e-mail or from `GET /admin/attendee-exports/{id}` and works for
+        `ticketing.exports.link_minutes` (30). Invalid, tampered or expired is `403 invalid_signature`; an export that is
+        not `ready` is `409 export_not_ready`.
+      parameters:
+        - { name: tenant, in: path, required: true, schema: { type: string } }
+        - { name: export, in: path, required: true, schema: { type: integer } }
+        - { $ref: '#/components/parameters/SignatureExpires' }
+        - { $ref: '#/components/parameters/Signature' }
+      responses:
+        '200':
+          description: The CSV file (header row `ticket_code,ticket_type,status,checked_in_at,order_reference,buyer_name,buyer_email`).
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/InvalidSignature' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: export_not_ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/events/{event}/check-ins:
+    post:
+      tags: [Check-in]
+      summary: Scan a ticket (door staff or admin)
+      description: One conditional UPDATE decides, so two gates scanning one code at once admit exactly one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckInRequest' }
+      responses:
+        '200':
+          description: Admitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CheckInResult' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: already_checked_in (with who/when), ticket_void or event_cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /admin/events/{event}/check-ins/stats:
+    get:
+      tags: [Check-in]
+      summary: Check-in numbers of an event (door staff or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      responses:
+        '200':
+          description: Total, checked in and remaining, overall and per ticket type.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/settings:
+    get:
+      tags: [Settings]
+      summary: Tenant settings, webhook URL and secret (admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      responses:
+        '200':
+          description: Settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/dashboard:
+    get:
+      tags: [Reports]
+      summary: Dashboard (admin, cached 60 s)
+      description: Gross sales today / this month / all time (tenant timezone), tickets sold vs capacity per upcoming event, active holds, check-in rate today, orders by status, top events.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      responses:
+        '200':
+          description: Dashboard figures (integer minor units).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/sales:
+    get:
+      tags: [Reports]
+      summary: Sales by day (admin)
+      description: One row per tenant-timezone day with orders, tickets sold, revenue (prices, before discounts), gross (total paid), fees, discounts (promo codes), refunds and net. `totals` cover the whole range; the day list is paginated.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: from, in: query, schema: { type: string, format: date }, description: Default 30 days ago. }
+        - { name: to, in: query, schema: { type: string, format: date }, description: On or after `from`; at most 366 days. }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Days and totals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/reports/events/{event}:
+    get:
+      tags: [Reports]
+      summary: Sales and attendance of one event (admin)
+      description: Per ticket type capacity, sold, held, available, revenue, refunded, checked in; totals include `discounts_minor`. Also served at `/admin/events/{event}/report`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Event report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/events/{event}/report:
+    get:
+      tags: [Reports]
+      summary: Alias of /admin/reports/events/{event}
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Event report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeObjectEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/events/{event}/attendees:
+    get:
+      tags: [Reports]
+      summary: Attendee list of an event (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+        - { name: ticket_type_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/TicketStatus' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Page of attendees.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Paginated' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Attendee' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/events/{event}/attendee-exports:
+    post:
+      tags: [Exports]
+      summary: Queue a CSV export of an event's attendees (admin)
+      description: |
+        Answers 202 at once. A tenant-context job streams the event's tickets to a CSV stored under
+        `exports/{tenant id}/` and e-mails the requesting admin a temporary signed download link. Takes no body.
+        Throttled per tenant + staff member.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      responses:
+        '202':
+          description: Export queued (`pending`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttendeeExportEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /admin/attendee-exports/{attendeeExport}:
+    get:
+      tags: [Exports]
+      summary: Status of an export, with a download link when ready (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: attendeeExport, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: The export. `download_url` is a fresh temporary signed URL while `status` is `ready`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttendeeExportEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/events:
+    get:
+      tags: [Events]
+      summary: List events (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EventStatus' } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: sort, in: query, schema: { type: string, enum: [starts_at, created_at, title], default: starts_at } }
+        - { name: direction, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Page of events with `ticket_types_count`, `tickets_capacity` (sum of tier quantities) and `tickets_sold`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Paginated' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Event' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Events]
+      summary: Create an event (draft, admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventCreateRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/events/{event}:
+    parameters:
+      - { $ref: '#/components/parameters/TenantHeader' }
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [Events]
+      summary: Show an event with its ticket types (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Events]
+      summary: Update an event (admin; `PUT` is accepted as an alias)
+      description: Send only the fields to change. A published event's slug is frozen. A `capacity` below what is sold + held is `422`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventUpdateRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: event_cancelled or slug_locked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Events]
+      summary: Delete an event (admin; only while it has no orders)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: event_has_orders. The event has any order (any status) or sold or held tickets; cancel it instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/events/{event}/publish:
+    post:
+      tags: [Events]
+      summary: Publish an event (needs at least one ticket type)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      responses:
+        '200':
+          description: Published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Wrong state or no ticket type.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/events/{event}/cancel:
+    post:
+      tags: [Events]
+      summary: Cancel an event (stops all sales; orders stay)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Wrong state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/events/{event}/refund-orders:
+    post:
+      tags: [Orders]
+      summary: Queue refunds for every paid order of a cancelled event (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EventId' }
+      responses:
+        '202':
+          description: One job queued per order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      queued: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The event is not cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/events/{event}/ticket-types:
+    parameters:
+      - { $ref: '#/components/parameters/TenantHeader' }
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [Ticket types]
+      summary: Ticket types of an event (admin; a handful per event, not paginated)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Tiers in display order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TicketType' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Ticket types]
+      summary: Add a ticket type (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TicketTypeCreateRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketTypeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: event_cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/ticket-types/{ticketType}:
+    parameters:
+      - { $ref: '#/components/parameters/TenantHeader' }
+      - { name: ticketType, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Ticket types]
+      summary: Show a ticket type (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The tier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketTypeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Ticket types]
+      summary: Update a ticket type (admin; `PUT` is accepted as an alias)
+      description: Send only the fields to change. `quantity` cannot go below sold + held (`409 quantity_below_sold`).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TicketTypeUpdateRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketTypeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: event_cancelled or quantity_below_sold.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Ticket types]
+      summary: Delete a ticket type (admin; only while no order refers to it)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: ticket_type_has_sales (sold or held tickets, or any order line refers to it) or last_ticket_type.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/promo-codes:
+    get:
+      tags: [Promo codes]
+      summary: List promo codes (admin, paginated, newest first)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: event_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: q, in: query, schema: { type: string, maxLength: 40 }, description: Code prefix, any letter case. }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Page of codes.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Paginated' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PromoCode' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Promo codes]
+      summary: Create a promo code (admin)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoCodeCreateRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromoCodeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/promo-codes/{promoCode}:
+    parameters:
+      - { $ref: '#/components/parameters/TenantHeader' }
+      - { name: promoCode, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Promo codes]
+      summary: Show a promo code (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromoCodeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Promo codes]
+      summary: Update a promo code (admin; `PUT` is accepted as an alias)
+      description: Send only the fields to change. Switching `discount_type` needs the matching value in the same request. Use `is_active=false` to retire a used code.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoCodeUpdateRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromoCodeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: max_uses_below_used
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Promo codes]
+      summary: Delete a promo code (admin; only while `used` = 0)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: promo_code_in_use; PATCH `is_active=false` instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/orders:
+    get:
+      tags: [Orders]
+      summary: List orders (admin, paginated, newest first)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: event_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/OrderStatus' } }
+        - { name: email, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: reference, in: query, schema: { type: string, maxLength: 40 } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Page of orders.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Paginated' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AdminOrder' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/orders/{order}:
+    get:
+      tags: [Orders]
+      summary: Show an order with items, tickets and refund (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: order, in: path, required: true, schema: { type: string }, description: The order reference. }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminOrder' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/orders/{order}/refund:
+    post:
+      tags: [Orders]
+      summary: Refund a paid or refund_pending order in full (admin)
+      description: Records the refund (the amount actually paid, discount applied) and returns the tickets to stock. The promo code use is NOT given back.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: order, in: path, required: true, schema: { type: string }, description: The order reference. }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+      responses:
+        '200':
+          description: Refunded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminOrder' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: invalid_order_state or tickets_already_used.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Sanctum token from `POST /auth/login`, valid for the tenant that issued it only.
+
+  parameters:
+    TenantHeader:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      description: The tenant slug (for example `sunsetfest`).
+      schema: { type: string, example: sunsetfest }
+    EventId:
+      name: event
+      in: path
+      required: true
+      schema: { type: integer }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100 }
+    SignatureExpires:
+      name: expires
+      in: query
+      required: true
+      schema: { type: integer }
+    Signature:
+      name: signature
+      in: query
+      required: true
+      schema: { type: string }
+
+  responses:
+    ValidationFailed:
+      description: validation_failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    Unauthenticated:
+      description: unauthenticated (no or invalid token, or a token of another tenant)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: forbidden (the role may not do this)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: not_found (also for another tenant's id)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TenantNotFound:
+      description: tenant_header_missing (400) or tenant_not_found (404)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: too_many_requests
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidSignature:
+      description: invalid_signature (missing, tampered or expired signed link)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string, description: Stable machine-readable code., example: insufficient_stock }
+        message: { type: string }
+        errors:
+          type: object
+          description: Only for `validation_failed`.
+          additionalProperties: { type: array, items: { type: string } }
+      additionalProperties: true
+    ValidationError:
+      allOf:
+        - { $ref: '#/components/schemas/Error' }
+        - type: object
+          required: [errors]
+          properties:
+            error: { const: validation_failed }
+    Paginated:
+      type: object
+      properties:
+        data: { type: array, items: {} }
+        links: { type: object, additionalProperties: { type: [string, 'null'] } }
+        meta:
+          type: object
+          properties:
+            current_page: { type: integer }
+            per_page: { type: integer }
+            total: { type: integer }
+            last_page: { type: integer }
+    FreeObjectEnvelope:
+      type: object
+      properties:
+        data: { type: object, additionalProperties: true }
+    EventStatus: { type: string, enum: [draft, published, cancelled] }
+    OrderStatus: { type: string, enum: [pending, paid, failed, expired, refund_pending, refunded] }
+    TicketStatus: { type: string, enum: [valid, checked_in, void] }
+    ExportStatus: { type: string, enum: [pending, processing, ready, failed] }
+    PromoDiscountType: { type: string, enum: [percent, fixed] }
+    SalesStatus:
+      type: string
+      enum: [not_published, cancelled, scheduled, on_sale, sold_out, ended, locked]
+      description: '`locked` = waits for the previous tier (`unlocks_after`) to sell out or end. `sold_out` also applies when the event-level capacity is used up.'
+
+    RegisterTenantRequest:
+      type: object
+      required: [name, tenant_id, currency, timezone, admin_name, admin_email, password]
+      properties:
+        name: { type: string, maxLength: 255 }
+        tenant_id: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$', description: 'Lowercase letters, digits, hyphens; not reserved (api, admin, www, ...); unique.' }
+        currency: { type: string, example: MYR }
+        timezone: { type: string, example: Asia/Kuala_Lumpur }
+        admin_name: { type: string, maxLength: 255 }
+        admin_email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 8 }
+    TenantRegistrationEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            tenant_id: { type: string }
+            status: { type: string, enum: [provisioning, active, failed] }
+            message: { type: [string, 'null'] }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, format: password, maxLength: 255 }
+    AuthToken:
+      type: object
+      properties:
+        token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_at: { type: string, format: date-time }
+        user:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [admin, door_staff] }
+
+    CheckoutRequest:
+      type: object
+      required: [buyer_name, buyer_email, items]
+      properties:
+        buyer_name: { type: string, maxLength: 255 }
+        buyer_email: { type: string, format: email, maxLength: 255 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: One entry per ticket type (no duplicates); all of one published event.
+          items:
+            type: object
+            required: [ticket_type_id, quantity]
+            properties:
+              ticket_type_id: { type: integer, minimum: 1 }
+              quantity: { type: integer, minimum: 1, maximum: 100, description: At most the tier's `max_per_order`. }
+        promo_code:
+          type: [string, 'null']
+          maxLength: 50
+          description: Optional promo code, any letter case. Takes money off the ticket subtotal (never below zero); fees are unchanged.
+    PaymentWebhookRequest:
+      type: object
+      required: [id, type, payment_reference]
+      properties:
+        id: { type: string, maxLength: 100, example: whk_01JD8X3K2Q }
+        type: { type: string, enum: [payment.succeeded, payment.failed] }
+        payment_reference: { type: string, maxLength: 40, example: pay_7f3a9c1b2d4e }
+        amount: { type: integer, minimum: 0, description: Minor units; required for payment.succeeded and must equal the order total. }
+        currency: { type: string, minLength: 3, maxLength: 3, description: Required for payment.succeeded. }
+        occurred_at: { type: [string, 'null'], format: date-time }
+    CheckInRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, maxLength: 64, description: Ticket code from the QR; trimmed and upper-cased. }
+        gate_name: { type: [string, 'null'], maxLength: 60 }
+    RefundRequest:
+      type: object
+      properties:
+        reason: { type: [string, 'null'], maxLength: 500 }
+
+    OrderItem:
+      type: object
+      properties:
+        ticket_type_id: { type: integer }
+        name: { type: string }
+        unit_price_minor: { type: integer }
+        quantity: { type: integer }
+        unit_fee_minor: { type: integer }
+        line_fee_minor: { type: integer }
+        line_total_minor: { type: integer }
+    BuyerOrder:
+      type: object
+      description: total_minor = subtotal_minor - discount_minor + fee_minor.
+      properties:
+        reference: { type: string }
+        payment_reference: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        event:
+          type: object
+          properties:
+            title: { type: string }
+            slug: { type: string }
+            starts_at: { type: string, format: date-time }
+            venue_name: { type: string }
+            venue_address: { type: [string, 'null'] }
+        buyer_name: { type: string }
+        buyer_email: { type: string }
+        currency: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        subtotal_minor: { type: integer }
+        discount_minor: { type: integer, description: Promo code discount; 0 without a code. }
+        promo_code: { type: [string, 'null'] }
+        fee_minor: { type: integer }
+        total_minor: { type: integer }
+        expires_at: { type: string, format: date-time }
+        paid_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+    BuyerOrderEnvelope:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/BuyerOrder' }
+    AdminOrder:
+      type: object
+      properties:
+        reference: { type: string }
+        payment_reference: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        event:
+          type: object
+          properties:
+            id: { type: integer }
+            title: { type: string }
+        buyer_name: { type: string }
+        buyer_email: { type: string }
+        currency: { type: string }
+        subtotal_minor: { type: integer }
+        discount_minor: { type: integer }
+        promo_code: { type: [string, 'null'] }
+        fee_minor: { type: integer }
+        total_minor: { type: integer }
+        created_at: { type: string, format: date-time }
+        paid_at: { type: [string, 'null'], format: date-time }
+        refunded_at: { type: [string, 'null'], format: date-time }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' }, description: Detail view only. }
+        tickets:
+          type: array
+          description: Detail view only.
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              seq: { type: integer }
+              status: { $ref: '#/components/schemas/TicketStatus' }
+              checked_in_at: { type: [string, 'null'], format: date-time }
+        refund:
+          type: [object, 'null']
+          description: Detail view only.
+          properties:
+            amount_minor: { type: integer }
+            currency: { type: string }
+            reason: { type: [string, 'null'] }
+            refunded_by: { type: [integer, 'null'] }
+            created_at: { type: string, format: date-time }
+    OrderTickets:
+      type: object
+      properties:
+        reference: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        buyer_name: { type: string }
+        event: { type: object, additionalProperties: true }
+        tickets:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              ticket_type: { type: string }
+              seq: { type: integer }
+              status: { $ref: '#/components/schemas/TicketStatus' }
+              checked_in_at: { type: [string, 'null'], format: date-time }
+              qr_url: { type: string, format: uri }
+    CheckInResult:
+      type: object
+      properties:
+        code: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        ticket_type: { type: string }
+        seq: { type: integer }
+        buyer_name: { type: string }
+        order_reference: { type: string }
+        event: { type: object, properties: { id: { type: integer }, title: { type: string } } }
+        checked_in_at: { type: string, format: date-time }
+        checked_in_by: { type: object, properties: { id: { type: integer }, name: { type: string } } }
+        gate_name: { type: [string, 'null'] }
+    Attendee:
+      type: object
+      properties:
+        ticket_code: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        ticket_type: { type: object, properties: { id: { type: integer }, name: { type: string } } }
+        buyer_name: { type: string }
+        buyer_email: { type: string }
+        order_reference: { type: string }
+        checked_in_at: { type: [string, 'null'], format: date-time }
+        checked_in_by: { type: [string, 'null'] }
+        gate_name: { type: [string, 'null'] }
+
+    PublicEventSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        venue_name: { type: string }
+        venue_address: { type: [string, 'null'] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        currency: { type: string }
+        from_price_minor: { type: [integer, 'null'] }
+        sold_out: { type: boolean }
+    PublicEvent:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        venue_name: { type: string }
+        venue_address: { type: [string, 'null'] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        timing: { type: string, enum: [upcoming, ongoing, ended] }
+        currency: { type: string }
+        capacity: { type: [integer, 'null'], description: Event-level shared capacity; null = no limit. }
+        capacity_remaining: { type: [integer, 'null'] }
+        ticket_types:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              description: { type: [string, 'null'] }
+              price_minor: { type: integer }
+              unlocks_after:
+                type: [object, 'null']
+                description: The tier that must sell out (or end) before this one opens.
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+              available: { type: integer, description: Capped by the event's remaining capacity. }
+              max_per_order: { type: integer }
+              sales_start_at: { type: [string, 'null'], format: date-time }
+              sales_end_at: { type: [string, 'null'], format: date-time }
+              sales_status: { $ref: '#/components/schemas/SalesStatus' }
+
+    EventCreateRequest:
+      type: object
+      required: [title, venue_name, starts_at, ends_at]
+      properties:
+        title: { type: string, maxLength: 255 }
+        slug: { type: [string, 'null'], maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', description: Unique; generated from the title when omitted. }
+        description: { type: [string, 'null'], maxLength: 10000 }
+        venue_name: { type: string, maxLength: 255 }
+        venue_address: { type: [string, 'null'], maxLength: 500 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time, description: After starts_at. }
+        capacity: { type: [integer, 'null'], minimum: 1, maximum: 10000000, description: Event-level capacity shared by all ticket types; null/omitted = no event limit. }
+    EventUpdateRequest:
+      type: object
+      description: Send only the fields to change.
+      properties:
+        title: { type: string, maxLength: 255 }
+        slug: { type: string, maxLength: 120, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        description: { type: [string, 'null'], maxLength: 10000 }
+        venue_name: { type: string, maxLength: 255 }
+        venue_address: { type: [string, 'null'], maxLength: 500 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        capacity: { type: [integer, 'null'], minimum: 1, maximum: 10000000, description: Cannot be below tickets already sold or held (422); null clears the limit. }
+    Event:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        venue_name: { type: string }
+        venue_address: { type: [string, 'null'] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/EventStatus' }
+        capacity: { type: [integer, 'null'], description: Event-level shared capacity; null = no limit. }
+        capacity_remaining: { type: [integer, 'null'] }
+        timing: { type: string, enum: [upcoming, ongoing, ended] }
+        published_at: { type: [string, 'null'], format: date-time }
+        cancelled_at: { type: [string, 'null'], format: date-time }
+        ticket_types_count: { type: integer, description: List only. }
+        tickets_capacity: { type: integer, description: 'List only: sum of the tiers'' quantities.' }
+        tickets_sold: { type: integer, description: List only. }
+        ticket_types: { type: array, items: { $ref: '#/components/schemas/TicketType' }, description: Detail views only. }
+    EventEnvelope:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Event' }
+
+    TicketTypeCreateRequest:
+      type: object
+      required: [name, price_minor, quantity]
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'], maxLength: 5000 }
+        price_minor: { type: integer, minimum: 0, maximum: 9999999999, description: Minor units (5000 = 50.00). }
+        quantity: { type: integer, minimum: 1, maximum: 1000000 }
+        max_per_order: { type: [integer, 'null'], minimum: 1, maximum: 100, description: Default 10. }
+        sales_start_at: { type: [string, 'null'], format: date-time }
+        sales_end_at: { type: [string, 'null'], format: date-time, description: After sales_start_at and not after the event ends. }
+        sort_order: { type: [integer, 'null'], minimum: 0, maximum: 65535 }
+        unlocks_after_ticket_type_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: Tier progression. This tier opens once that tier (same event, not itself, no loop) is sold out or its sales ended; before that checkout answers `409 tier_locked`.
+    TicketTypeUpdateRequest:
+      type: object
+      description: Send only the fields to change.
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'], maxLength: 5000 }
+        price_minor: { type: integer, minimum: 0, maximum: 9999999999 }
+        quantity: { type: integer, minimum: 1, maximum: 1000000, description: Cannot go below sold + held. }
+        max_per_order: { type: integer, minimum: 1, maximum: 100 }
+        sales_start_at: { type: [string, 'null'], format: date-time }
+        sales_end_at: { type: [string, 'null'], format: date-time }
+        sort_order: { type: integer, minimum: 0, maximum: 65535 }
+        unlocks_after_ticket_type_id: { type: [integer, 'null'], minimum: 1, description: null removes the dependency. }
+    TicketType:
+      type: object
+      properties:
+        id: { type: integer }
+        event_id: { type: integer }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        price_minor: { type: integer }
+        currency: { type: string }
+        quantity: { type: integer }
+        sold: { type: integer }
+        held: { type: integer }
+        available: { type: integer, description: Capped by the event's remaining capacity. }
+        max_per_order: { type: integer }
+        sales_start_at: { type: [string, 'null'], format: date-time }
+        sales_end_at: { type: [string, 'null'], format: date-time }
+        sort_order: { type: integer }
+        unlocks_after_ticket_type_id: { type: [integer, 'null'] }
+        sales_status: { $ref: '#/components/schemas/SalesStatus' }
+    TicketTypeEnvelope:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/TicketType' }
+
+    PromoCodeCreateRequest:
+      type: object
+      required: [code, discount_type]
+      properties:
+        code: { type: string, minLength: 3, maxLength: 40, pattern: '^[A-Za-z0-9_-]+$', description: Stored upper-case; unique. }
+        discount_type: { $ref: '#/components/schemas/PromoDiscountType' }
+        percent_bps: { type: integer, minimum: 1, maximum: 10000, description: Basis points (1000 = 10.00 %). Required for `percent`, not allowed for `fixed`. }
+        amount_minor: { type: integer, minimum: 1, maximum: 9999999999, description: Minor units. Required for `fixed`, not allowed for `percent`. }
+        event_id: { type: [integer, 'null'], minimum: 1, description: Null or omitted = every event of the tenant. }
+        max_uses: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: Null or omitted = unlimited. }
+        starts_at: { type: [string, 'null'], format: date-time }
+        ends_at: { type: [string, 'null'], format: date-time, description: After starts_at. }
+        is_active: { type: [boolean, 'null'], description: Default true. }
+    PromoCodeUpdateRequest:
+      type: object
+      description: Send only the fields to change.
+      properties:
+        code: { type: string, minLength: 3, maxLength: 40, pattern: '^[A-Za-z0-9_-]+$' }
+        discount_type: { $ref: '#/components/schemas/PromoDiscountType' }
+        percent_bps: { type: [integer, 'null'], minimum: 1, maximum: 10000 }
+        amount_minor: { type: [integer, 'null'], minimum: 1, maximum: 9999999999 }
+        event_id: { type: [integer, 'null'], minimum: 1 }
+        max_uses: { type: [integer, 'null'], minimum: 1, maximum: 1000000, description: Cannot be below `used` (409 max_uses_below_used). }
+        starts_at: { type: [string, 'null'], format: date-time }
+        ends_at: { type: [string, 'null'], format: date-time }
+        is_active: { type: boolean }
+    PromoCode:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        discount_type: { $ref: '#/components/schemas/PromoDiscountType' }
+        percent_bps: { type: [integer, 'null'] }
+        amount_minor: { type: [integer, 'null'] }
+        event_id: { type: [integer, 'null'] }
+        max_uses: { type: [integer, 'null'] }
+        used: { type: integer }
+        remaining: { type: [integer, 'null'] }
+        starts_at: { type: [string, 'null'], format: date-time }
+        ends_at: { type: [string, 'null'], format: date-time }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PromoCodeEnvelope:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/PromoCode' }
+
+    AttendeeExport:
+      type: object
+      properties:
+        id: { type: integer }
+        event_id: { type: integer }
+        status: { $ref: '#/components/schemas/ExportStatus' }
+        row_count: { type: [integer, 'null'] }
+        error: { type: [string, 'null'] }
+        download_url: { type: [string, 'null'], format: uri, description: Temporary signed URL while `ready`. }
+        download_url_valid_minutes: { type: [integer, 'null'] }
+        requested_by: { type: [integer, 'null'] }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+    AttendeeExportEnvelope:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/AttendeeExport' }

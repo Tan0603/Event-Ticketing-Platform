@@ -8,5 +8,6 @@ final readonly class OrderTotals
         public int $subtotalMinor,
         public int $feeMinor,
         public int $totalMinor,
+        public int $discountMinor = 0,
     ) {}
 }

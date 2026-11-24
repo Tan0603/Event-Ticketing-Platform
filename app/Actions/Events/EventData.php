@@ -14,5 +14,6 @@ final readonly class EventData
         public CarbonImmutable $startsAt,
         public CarbonImmutable $endsAt,
         public ?string $venueAddress = null,
+        public ?int $capacity = null,
     ) {}
 }

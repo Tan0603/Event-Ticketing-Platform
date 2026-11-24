@@ -50,6 +50,10 @@ final class RateLimiters
         RateLimiter::for('check-in', fn (Request $request): Limit => self::limit('checkin_per_minute', 60)
             ->by(TenantKey::for('check-in', (string) $request->user()?->getAuthIdentifier())));
 
+        // Exports are heavy (a full scan of an event's tickets): per tenant + staff member.
+        RateLimiter::for('exports', fn (Request $request): Limit => self::limit('export_per_minute', 60)
+            ->by(TenantKey::for('exports', (string) $request->user()?->getAuthIdentifier())));
+
         RateLimiter::for('register-status', fn (Request $request): Limit => self::limit('register_status_per_minute', 60)
             ->by(TenantKey::central('register-status', 'ip', (string) $request->ip())));
     }

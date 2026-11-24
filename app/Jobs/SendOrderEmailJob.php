@@ -69,7 +69,7 @@ class SendOrderEmailJob implements ShouldQueue
     /** Called by the queue when every attempt failed. */
     public function failed(Throwable $e): void
     {
-        $this->inTenant(function () use ($e): void {
+        $this->inTenantOnFailure(function () use ($e): void {
             DB::table('order_notifications')
                 ->where('order_id', $this->orderId)->where('type', $this->type->value)
                 ->where('status', '!=', NotificationStatus::Sent->value)

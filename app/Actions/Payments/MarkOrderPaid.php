@@ -6,6 +6,7 @@ use App\Actions\Orders\QueueOrderEmail;
 use App\Actions\Tickets\IssueTickets;
 use App\Domain\Inventory\TicketStock;
 use App\Domain\Orders\OrderStateMachine;
+use App\Domain\Promo\PromoRedemption;
 use App\Enums\NotificationType;
 use App\Enums\OrderStatus;
 use App\Models\Tenant\Order;
@@ -52,6 +53,11 @@ class MarkOrderPaid
                 return false;
             }
             $sold[$ticketTypeId] = $quantity;
+        }
+
+        // The expiry gave the promo use back; take it again if the code still has one (the buyer keeps the quoted price either way).
+        if ($order->promo_code_id !== null) {
+            PromoRedemption::retake($order->promo_code_id);
         }
 
         OrderStateMachine::transition($order, OrderStatus::Paid);

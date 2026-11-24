@@ -48,9 +48,18 @@ Docker Compose for everything. Runtime packages beyond the framework: `stancl/te
   produce an un-namespaced key. A grep audit for raw keys is part of the review checklist.
 - **Queued jobs** take ids (the tenant id and the order/event id), never models, and re-enter the tenant with the
   `RunsInTenant` trait. `ProvisionTenantJob` is the only central job.
+  `RunsInTenant` checks `TenantDatabase::exists()` *before* initialising tenancy. Without that check, an active tenant
+  row whose database is gone makes stancl's `DatabaseTenancyBootstrapper` throw before the cache and filesystem
+  bootstrappers ran, and the `revert()` that follows nulls `app('cache')` and throws on the filesystem disk: a long-lived
+  queue worker is then broken for every later job of every tenant. With the check the job throws `TenantDatabaseMissing`
+  and fails at once (no retries), `failed()` handlers only log, and the process stays healthy.
 - **Scheduled tasks** (`routes/console.php`) fan out one job per *active* tenant (`DispatchForActiveTenants`), so each task runs
   in its own tenant context; `withoutOverlapping` + `onOneServer` stop a task overlapping itself.
-- **File storage**: QR codes are generated on demand from the ticket code and are not stored.
+  Active tenants whose database does not exist are skipped with a warning (one `pg_database` query for all tenants).
+- **File storage**: QR codes are generated on demand from the ticket code and are not stored. The only stored files are
+  attendee CSV exports (section 13): they sit on the `exports` disk under `exports/{tenant id}/{uuid}.csv`, every path is
+  built by `App\Support\TenantStorage` (which, like `TenantKey`, refuses to run outside tenant context), and the
+  download refuses any path outside the tenant's own folder.
 
 ### Provisioning (sign-up)
 
@@ -82,6 +91,10 @@ UPDATE ticket_types tt SET held = tt.held + :qty
    AND :qty <= tt.max_per_order
    AND (tt.sales_start_at IS NULL OR tt.sales_start_at <= :now)
    AND COALESCE(tt.sales_end_at, e.ends_at) > :now      -- the sales window
+   AND (tt.unlocks_after_ticket_type_id IS NULL OR EXISTS (   -- tier progression, see below
+         SELECT 1 FROM ticket_types pre
+          WHERE pre.id = tt.unlocks_after_ticket_type_id
+            AND (pre.sold + pre.held >= pre.quantity OR COALESCE(pre.sales_end_at, e.ends_at) <= :now)))
 RETURNING tt.id, tt.name, tt.price_minor;                -- price snapshot for the order
 ```
 
@@ -89,6 +102,34 @@ Why this is safe: PostgreSQL takes a row lock for the `UPDATE`, re-evaluates the
 to commit, and either changes the row or matches nothing. Two buyers racing for the last ticket are serialised on that row:
 the first gets `held + 1`, the second finds `sold + held + 1 > quantity`, matches zero rows and receives a clean 409
 `insufficient_stock`. There is no window between "check" and "write".
+
+**Tier progression.** A tier with `unlocks_after_ticket_type_id` is purchasable only when its predecessor is *done*: its
+stock is gone (`sold + held >= quantity`; a hold counts as gone) or its sales window has ended. The condition is the
+`EXISTS` subquery inside the hold `UPDATE` above, so it is judged in the same statement and the same snapshot as the stock
+check: there is no PHP pre-check that could go stale. The predecessor row is only *read* (MVCC), never locked, so the lock
+order is unchanged. Only after the statement matched nothing does `PlaceOrder::explainFailure` read the rows again to say
+why (`tier_locked`, 409, before `insufficient_stock`). A tier whose predecessor later gets stock back (its holds expire)
+locks again for new buyers; what was already bought is untouched. `SalesStatus::Locked` is display only (storefront and
+admin, derived from the same cached rows and counters, no extra query). A tier cannot point at itself, another event's tier
+or create a loop (a loop would lock every tier in it for ever): the FormRequest checks early, and the create/update action
+checks again under the event lock, so two concurrent edits cannot close a loop between them.
+
+**Event-level shared capacity.** An event may have a `capacity` shared by all its ticket types (null = no limit). The
+counter `events.reserved` (= sold + held over its tiers) is kept by `TicketStock` and *only* for events that have a
+capacity: every method that changes `sold + held` first moves `reserved` by the same amount with its own conditional
+`UPDATE events SET reserved = reserved + :q WHERE id = :event AND capacity IS NOT NULL AND reserved + :q <= capacity`
+(`release` / `returnSold` subtract with `reserved >= :q`), in the same transaction and BEFORE the ticket type is touched. If
+the event counter refuses, the hold fails (`event_sold_out`, 409); if the tier then refuses, the event counter is given
+back, so the two never drift (`commitHold` leaves `sold + held` unchanged and so does not touch it). `CHECK (capacity IS NULL
+OR reserved <= capacity)` is the last defence. Events without a capacity skip the extra statement entirely and keep the
+shared-lock throughput.
+
+*Why this changes the event lock.* Many checkouts normally share the event row (`FOR SHARE`). Two sharers that both then
+`UPDATE` that same row would deadlock, so `App\Domain\Inventory\EventLock::acquire()` takes `FOR UPDATE` for events with a
+capacity (and `FOR SHARE` for the rest). Checkout, the payment webhook, the expiry job and refunds all go through it. The
+trade-off is explicit: checkouts of one capped event queue on one row (a hot counter either way), uncapped events are
+unaffected. Changing the capacity (admin) takes the event `FOR UPDATE`, recomputes `reserved` as `SUM(sold + held)` in SQL
+and refuses a capacity below it.
 
 **All or nothing.** A checkout holds each line with one such statement inside **one transaction**; if any line fails the
 transaction aborts and every earlier hold of that checkout rolls back with it, and no order row survives.
@@ -100,9 +141,9 @@ persist an oversold state; the worst a bug can do is fail loudly. (The bulk seed
 
 | operation | when | effect |
 |---|---|---|
-| `hold` | checkout | `held += q` if it fits |
+| `hold` | checkout | `held += q` if it fits the tier, the event capacity and tier progression |
 | `commitHold` | payment succeeded | `held -= q, sold += q` (`sold + held` unchanged, so the CHECK always holds) |
-| `release` | payment failed / hold expired | `held -= q` |
+| `release` | payment failed / hold expired | `held -= q` (and `events.reserved -= q` for a capped event) |
 | `sellWithoutHold` | late payment on an expired order | `sold += q` only if it still fits; otherwise the order becomes `refund_pending` |
 | `returnSold` | refund of a paid order | `sold -= q` |
 
@@ -116,6 +157,8 @@ reads the cache. The storefront shows availability from a short-lived cache (see
 Checkout, the webhook, the expiry job and refunds all lock in that order (the event row is taken `FOR SHARE`, so any number of
 checkouts run in parallel while cancelling the event, which takes it `FOR UPDATE`, waits for them). `DB::transaction($cb, 3)`
 retries on the rare serialization or deadlock error.
+
+**Deleting.** An event or ticket type that has any order (any status, also failed, expired or refunded) cannot be deleted: `409 event_has_orders` / `ticket_type_has_sales`. `DeleteEvent` checks `orders.event_id` (indexed) under the event `FOR UPDATE`; `DeleteTicketType` does it inside its single atomic `DELETE ... WHERE sold = 0 AND held = 0 AND NOT EXISTS (order_items ...)`. The `RESTRICT` foreign keys (`orders.event_id`, `order_items.ticket_type_id`, tickets) are the last guard: a `23503` that still slips through is caught outside the (rolled back) transaction and mapped to the same 409, never a 500.
 
 **Proof.** `php artisan stress:checkout {tenant} {ticket_type} --requests=200 --concurrency=50` fires concurrent real HTTP
 checkouts at one ticket type and prints held + sold against capacity and the status histogram. With quantity 50 and 200
@@ -153,7 +196,7 @@ own timestamp column (`paid_at`, `expired_at`, `refund_pending_at`, ...).
 
 | where | key | mechanism |
 |---|---|---|
-| checkout | `Idempotency-Key` header | `orders.idempotency_key` is `UNIQUE` (NULLs do not collide) and the request body is hashed into `request_fingerprint`. Same key + same body returns the same order (header `Idempotent-Replayed: true`) and makes no second hold; same key + different body is a 422. If two retries race, the loser's transaction (holds included) rolls back on the unique violation and it replays the winner's order. |
+| checkout | `Idempotency-Key` header | `orders.idempotency_key` is `UNIQUE` (NULLs do not collide) and the request body is hashed into `request_fingerprint`. Same key + same body returns the same order (header `Idempotent-Replayed: true`) and makes no second hold; same key + different body (the promo code is part of it) is a 422. If two retries race, the loser's transaction (holds included) rolls back on the unique violation and it replays the winner's order. |
 | payment webhook | provider's `id` | `webhook_events.event_id` `UNIQUE`, see section 3. Also `succeeded` on an already-paid order is a no-op and `failed` after `succeeded` is ignored. |
 | tickets | `(order_item_id, seq)` | `UNIQUE` |
 | e-mail | `(order_id, type)` | the `order_notifications` row is **claimed first** (`UNIQUE`), then the job is dispatched `afterCommit`. A job that runs twice, or a webhook delivered twice, can only send once. |
@@ -168,8 +211,31 @@ Integer minor units everywhere (`bigint`); no floats, no `round()`. `App\Domain\
 happens. The booking fee is **per ticket**: `intdiv(unit_price * bps + 5000, 10000) + fixed` (half-up as integer maths), a free
 ticket has no fee. A line's fee is the ticket fee times the quantity; the order total is the sum of lines plus fees. The
 spec's worked example (2 x 45.00 and 3 x 19.99 at 5% + 0.50) totals 159.97 and is a test. Orders and lines **snapshot** price,
-fee and tenant fee settings and are never recomputed. `CHECK total = subtotal + fee` and the per-line checks keep every order
-consistent in the database too.
+fee and tenant fee settings and are never recomputed. `CHECK total = subtotal - discount + fee` and the per-line checks keep
+every order consistent in the database too.
+
+### 6b. Promo codes
+
+A code takes money off the **ticket subtotal** only: percent = `intdiv(subtotal * bps + 5000, 10000)` (half-up integer maths)
+or a fixed amount, always capped at the subtotal, so the total can never drop below the fees. **Fees are per ticket on the
+ORIGINAL price and do not change** (`total = subtotal - discount + fees`). All of it is `FeeCalculator::discount()` /
+`totals()`; the order snapshots `discount_minor`, `promo_code_id` and the code text, so later edits to the code never touch
+an order (and the webhook compares the provider's amount with the discounted total).
+
+*Redemption is one atomic statement* (`App\Domain\Promo\PromoRedemption`), inside the checkout transaction and after the
+ticket types in the lock order:
+`UPDATE promo_codes SET used = used + 1 WHERE id = :id AND is_active AND (max_uses IS NULL OR used < max_uses) AND (event_id IS NULL
+OR event_id = :event) AND starts_at/ends_at window ... RETURNING id, code, discount_type, percent_bps, amount_minor`. Zero rows
+means the code cannot be used, and the transaction (stock holds included) rolls back. The discount is computed from the row
+`RETURNING` handed back, so an admin edit between the pre-check and the redemption cannot skew it. A read-only pre-check
+(before any stock is touched) only exists to give precise errors: `promo_code_invalid` (unknown, inactive or another event's
+code, 422), `promo_code_not_started` / `promo_code_expired` (422), `promo_code_exhausted` (409, also when two checkouts race
+for the last use: the loser fails cleanly). `CHECK (used <= max_uses)` backs it up. The code is part of the idempotency
+fingerprint, so the same key with another code is `idempotency_key_reused`.
+
+*Giving the use back:* `ReleaseOrder` (pending -> expired or failed) does `used = used - 1 WHERE used > 0` in the same
+transaction. A refund does **not** give it back (the buyer used the code; README assumption). A late payment on an expired
+order takes the use again if the code still has one (`retake`); if it is used up the order keeps the price it was quoted.
 
 ## 7. Caching and invalidation
 
@@ -183,7 +249,9 @@ consistent in the database too.
 Invalidation is a **version bump** per tenant: every key contains the tenant's current version, so one `INCR` makes all old
 entries unreachable at once (they expire on their own TTL). It works on any driver without cache tags. The bump runs in
 `DB::afterCommit`, so a concurrent reader cannot re-cache pre-commit data under the new version. It is triggered by event and
-ticket-type changes and by orders being created, paid, failed, expired or refunded.
+ticket-type changes (including tier progression and event capacity) and by orders being created, paid, failed, expired or
+refunded. Promo code changes also bump it (cheap, and keeps any future promo display fresh). The storefront counters entry
+also carries the event's `reserved` counter, with the same 15 s lifetime.
 
 **Availability on the storefront may be stale for at most 15 seconds.** It is display-only: checkout decides in PostgreSQL.
 HTTP responses for tenant data carry `Vary: X-Tenant-ID`. The storefront list is built with a fixed number of queries
@@ -224,8 +292,29 @@ check-in (per staff member). Limits live in `config/ticketing.php`.
   ~90 ms, dashboard ~65 ms, per-event report ~15 ms, storefront detail 1 ms warm (target < 100 ms).
 - `demo:seed-bulk` writes in chunks and set-based SQL (about 27 s per tenant, target < 3 min).
 
-## 12. Trade-offs and what I would change
+## 12. Attendee CSV export (queued, signed link)
 
+`POST /api/admin/events/{event}/attendee-exports` (admin) inserts an `attendee_exports` row (`pending`) and queues
+`GenerateAttendeeExportJob(tenantId, exportId)`: ids only, tenant context via `RunsInTenant`. The job claims the row with
+`UPDATE ... SET status='processing' WHERE status='pending'` (a duplicate delivery does nothing, so the e-mail is queued once),
+streams the event's tickets with `lazyById` (keyset chunks of 1 000, never all rows in memory) into a spill-to-disk buffer,
+writes it to `exports/{tenant id}/{uuid}.csv` on the `exports` disk through `TenantStorage`, marks the row `ready` and queues
+`AttendeeExportReadyMail` (plain values only, so it needs no tenant context when it renders) with a temporary signed link. Any
+exception marks the row `failed` with the error and deletes a partial file; `failed()` covers a timeout or killed worker.
+Cells starting with `= + - @` are prefixed with a quote (spreadsheet formula injection).
+
+`GET /api/admin/attendee-exports/{id}` shows the status and, when `ready`, a fresh signed `download_url`. The download route is
+`/api/public/{tenant}/attendee-exports/{id}/download` under the same signed, tenant-by-path group as the buyer links: the
+signature covers the tenant segment and expires after `ticketing.exports.link_minutes` (30); a bad signature is
+`403 invalid_signature`. Isolation: the export row lives in the tenant database (tenant B cannot find A's id), the path is
+built and checked by `TenantStorage`, and the signature binds the tenant. Retention of old files is not automated (README).
+
+## 13. Trade-offs and what I would change
+
+- **Event capacity serialises checkouts of a capped event** on its row (`FOR UPDATE`) in exchange for a hard, atomic shared
+  limit; events without a capacity are unaffected. If one capped event became hot enough to matter, the counter would be
+  sharded or the limit enforced per tier.
+- **Promo redemption is a second hot row** (one per code), but it is touched once per order and only by orders that use it.
 - **Database per tenant** gives hard isolation and cheap per-tenant backup/drop, at the cost of operational weight: a migration
   must run N times, and cross-tenant analytics need a separate path. Fine for hundreds of tenants, not for hundreds of thousands.
 - **Version-bump caching** wastes a little memory (old entries live until their TTL) in exchange for O(1) invalidation and no
